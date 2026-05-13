@@ -6,7 +6,7 @@
 #   bash tools/save_trace.sh \
 #     --skill "auto-review-loop" \
 #     --purpose "round-1-review" \
-#     --model "gpt-5.4" \
+#     --model "gpt-5.5" \
 #     --thread-id "019d8fe0-..." \
 #     --prompt-file /tmp/prompt.txt \
 #     --response-file /tmp/response.txt
@@ -15,7 +15,7 @@
 #   bash tools/save_trace.sh \
 #     --skill "experiment-audit" \
 #     --purpose "code-audit" \
-#     --model "gpt-5.4" \
+#     --model "gpt-5.5" \
 #     --thread-id "019d8fe0-..." \
 #     --prompt "Review this code..." \
 #     --response "Score: 7/10..."
