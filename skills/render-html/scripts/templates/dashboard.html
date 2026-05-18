@@ -78,9 +78,15 @@ header.hero h1 {
 header.hero .subtitle {
   font-size: 15px;
   color: var(--ink-soft);
-  margin: 0 0 16px;
+  margin: 0 0 6px;
   font-style: italic;
 }
+header.hero .byline {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 0 0 16px;
+}
+header.hero .byline strong { color: var(--ink); font-weight: 600; }
 header.hero .meta {
   display: flex;
   gap: 18px;
@@ -303,6 +309,7 @@ footer.aris-footer a { color: var(--ink-muted); border-bottom: 1px dotted var(--
   {{EYEBROW_BLOCK}}
   <h1>{{TITLE}}</h1>
   {{SUBTITLE_BLOCK}}
+  {{BYLINE_BLOCK}}
   <div class="meta">
     <span><strong>Source:</strong> <code>{{SOURCE_PATH}}</code></span>
     <span><strong>SHA256:</strong> <code>{{SOURCE_SHA256_SHORT}}</code></span>

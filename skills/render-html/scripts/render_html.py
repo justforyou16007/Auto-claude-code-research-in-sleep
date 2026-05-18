@@ -744,6 +744,38 @@ def substitute(template: str, vars: dict) -> str:
     return out
 
 
+def _repo_relative(input_path: Path) -> str:
+    """Return a display-friendly repo-relative path. Avoids leaking absolute
+    /Users/<name>/... in the generated HTML meta + footer.
+
+    Order: cwd-relative if input is under cwd; else git-root-relative if in
+    a git repo; else basename only (parent dirs stripped) so we never
+    surface the home directory.
+    """
+    try:
+        return str(input_path.relative_to(Path.cwd()))
+    except ValueError:
+        pass
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=input_path.parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            git_root = Path(result.stdout.strip())
+            try:
+                return str(input_path.relative_to(git_root))
+            except ValueError:
+                pass
+    except Exception:
+        pass
+    return input_path.name
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Render an ARIS Markdown artifact to single-file HTML.",
@@ -754,6 +786,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--title", help="Page title (default: first H1, or filename)")
     ap.add_argument("--subtitle", default="", help="Optional italic subtitle line")
     ap.add_argument("--eyebrow", default="", help="Optional uppercase eyebrow above H1")
+    ap.add_argument("--author", default="", help="Optional author byline (e.g., 'Name (姓名), Affiliation')")
     ap.add_argument("--lang", default="zh-CN", help='<html lang="…"> attribute (default zh-CN)')
     ap.add_argument("--state", help="Optional sidecar state JSON to append as <details>")
     ap.add_argument("--json", dest="json_sidecar", help="Optional sidecar JSON to append (e.g., KILL_ARGUMENT.json)")
@@ -765,6 +798,7 @@ def main(argv: list[str] | None = None) -> int:
     if not input_path.exists():
         print(f"error: input not found: {input_path}", file=sys.stderr)
         return 2
+    display_source_path = _repo_relative(input_path)
 
     raw = input_path.read_text(encoding="utf-8")
     source_hash = sha256_of(raw)
@@ -822,6 +856,10 @@ def main(argv: list[str] | None = None) -> int:
 
     eyebrow_block = f'<div class="eyebrow">{html_lib.escape(args.eyebrow)}</div>' if args.eyebrow else ""
     subtitle_block = f'<p class="subtitle">{html_lib.escape(args.subtitle)}</p>' if args.subtitle else ""
+    byline_block = (
+        f'<p class="byline">By <strong>{html_lib.escape(args.author)}</strong></p>'
+        if args.author else ""
+    )
 
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -830,7 +868,8 @@ def main(argv: list[str] | None = None) -> int:
         "TITLE": html_lib.escape(title),
         "SUBTITLE_BLOCK": subtitle_block,
         "EYEBROW_BLOCK": eyebrow_block,
-        "SOURCE_PATH": html_lib.escape(str(input_path)),
+        "BYLINE_BLOCK": byline_block,
+        "SOURCE_PATH": html_lib.escape(display_source_path),
         "SOURCE_SHA256": source_hash,
         "SOURCE_SHA256_SHORT": source_hash[:12],
         "GENERATED_AT": generated_at,
