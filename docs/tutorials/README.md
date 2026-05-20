@@ -15,7 +15,9 @@ Long-form interview-prep cheat sheets, written in Markdown and rendered to singl
 | Tutorial | MD | HTML | Topics |
 |---|---|---|---|
 | **RLHF / DPO / GRPO / PPO** | [md](rlhf_dpo_grpo_ppo_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/rlhf_dpo_grpo_ppo_tutorial.html) | PPO clip + GAE · RLHF pipeline · DPO closed-form from BT · GRPO group-relative · KTO/IPO/SimPO/ORPO · PRM vs ORM · Constitutional AI |
-| **Reasoning Models (o1 / R1 / Test-Time Compute / PRM)** | [md](reasoning_models_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/reasoning_models_tutorial.html) | o1/o3/R1 三家对比 · GRPO 推导 · PRM vs ORM · s1 budget forcing · MCTS+PUCT · R1-Distill |
+| **Reasoning Models (o1 / R1 / Test-Time Compute / PRM)** | [md](reasoning_models_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/reasoning_models_tutorial.html) | o1/o3/R1 three-way comparison · GRPO derivation · PRM vs ORM · s1 budget forcing · MCTS+PUCT · R1-Distill |
+| **KL Divergence in RLHF** | [md](kl_divergence_rlhf_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/kl_divergence_rlhf_tutorial.html) | k1/k2/k3 estimators · forward vs reverse KL · KL in PPO/GRPO/DPO · placement gradient bias · "Rethinking KL" + "Comedy of Estimators" |
+| **LLM On-Policy Distillation (OPD)** | [md](llm_opd_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/llm_opd_tutorial.html) | Route A (full-vocab) vs Route B (REINFORCE/IS, Tinker default) · vOPD control variate · OPD+GRPO · MiniLLM / GKD / Qwen3 / Thinking Machines |
 
 ### 🏛️ LLM Architecture & Systems
 
@@ -42,6 +44,8 @@ Long-form interview-prep cheat sheets, written in Markdown and rendered to singl
 | **Image Generation Systems** | [md](image_generation_systems_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/image_generation_systems_tutorial.html) | LDM · SD/SDXL/SD3/FLUX · DiT · AdaLN-Zero · ControlNet · IP-Adapter · LoRA · DreamBooth · ADD/LADD distillation |
 | **Video Generation** | [md](video_generation_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/video_generation_tutorial.html) | 3D Causal VAE · Spacetime Patches · Spatiotemporal Attention · MM-DiT · I2V · VBench · Sora / Hunyuan-Video / Wan |
 | **3D Generation** | [md](3d_generation_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/3d_generation_tutorial.html) | NeRF volumetric rendering · Instant-NGP hash · 3DGS rasterization · SDS / VSD · Trellis / Hunyuan3D |
+| **Diffusion Post-Training** | [md](diffusion_post_training_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/diffusion_post_training_tutorial.html) | DDPO · DPOK · DRaFT-K · AlignProp · Diffusion-DPO · D3PO · SPO · Diffusion-KTO · MaPO · Flow-GRPO |
+| **Diffusion / Flow Distillation** | [md](diffusion_distillation_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/diffusion_distillation_tutorial.html) | CM · iCT · sCM · CTM · LCM/TCD · rCM · DMD/DMD2 · ADD/LADD/Lightning · Rectified Flow/InstaFlow · Progressive distillation |
 
 ### 👁️ Multimodal
 
@@ -49,7 +53,7 @@ Long-form interview-prep cheat sheets, written in Markdown and rendered to singl
 |---|---|---|---|
 | **VLM (CLIP / LLaVA / Qwen-VL / DeepSeek-VL)** | [md](vlm_multimodal_tutorial.md) | [html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/tutorials/vlm_multimodal_tutorial.html) | CLIP InfoNCE derivation, SigLIP, ViT, BLIP-2 Q-Former, Flamingo Perceiver, LLaVA, Qwen2-VL M-RoPE |
 
-> ✅ 15 tutorials initial set complete; full catalog + ongoing additions at [**ARIS-in-AI-Offer**](https://github.com/wanshuiyin/ARIS-in-AI-Offer).
+> ✅ 23 tutorials across 6 categories; each also available in English alongside the Chinese version (e.g. `attention_tutorial_en.md` / `_en.html`). Full curated collection: [**ARIS-in-AI-Offer**](https://github.com/wanshuiyin/ARIS-in-AI-Offer).
 
 ## How they were produced
 
