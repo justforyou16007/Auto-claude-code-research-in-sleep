@@ -16,7 +16,7 @@
 
 🚀 **Beyond 科研 → 任何 "研究"**：[**ARIS-Anything**](https://github.com/wanshuiyin/ARIS-Anything) 把 ARIS 的五步 loop（plan / draft / 对抗审 / 迭代 / 持久化）推广到非学术的结构化研究——投资尽调 / 法律研究 / 市场研究 / 自驱学习 / 调查新闻 / 工程复盘等。**Incoming siblings**：🎬 [**ARIS-Movie**](https://github.com/wanshuiyin/ARIS-Anything#-incoming-siblings)（长视频生成 + movie wiki 对抗审）· 📐 **ARIS-PRD**（产品需求文档）· 🎨 **ARIS-Design**（设计 brief 对抗评审）· 🏋️ **ARIS-Gym**（skill 跑分 + OpenAI-Gym-for-research-agents 的 meta 评测层）。
 
-🎯 **准备 2026 AI 秋招？** → [**🌐 ARIS-in-AI-Offer 网页版**](https://wanshuiyin.github.io/ARIS-in-AI-Offer/) · [GitHub repo](https://github.com/wanshuiyin/ARIS-in-AI-Offer) · [中文 README](https://github.com/wanshuiyin/ARIS-in-AI-Offer/blob/main/README_CN.md) · 23 篇双语 ML / LLM / 多模态 / 生成式 / Agent 面试 cheat sheet 合集——每篇公式推导 + 从零 PyTorch 代码 + 25 高频面试题（L1 必会 / L2 进阶 / L3 顶级 lab），全部由 ARIS 的 `/render-html` workflow 自动生成。**Coming feature**：🌐 **ARIS-Homepage**——给秋招同学**自动生成个人主页 / 作品集**（CV + 项目 + 论文 bib → 单文件 HTML，跨模型 fact-check venue / 时间 / 模型名）。**希望大家秋招的时候轻松一点 🌱**
+🎯 **准备 2026 AI 秋招？** → [**🌐 ARIS-in-AI-Offer 网页版**](https://wanshuiyin.github.io/ARIS-in-AI-Offer/) · [GitHub repo](https://github.com/wanshuiyin/ARIS-in-AI-Offer) · [中文 README](https://github.com/wanshuiyin/ARIS-in-AI-Offer/blob/main/README_CN.md) · 23 篇双语 ML / LLM / 多模态 / 生成式 / Agent 面试 cheat sheet 合集——每篇公式推导 + 从零 PyTorch 代码 + 25 高频面试题（L1 必会 / L2 进阶 / L3 顶级 lab），全部由 ARIS 的 `/render-html` workflow 自动生成。**🚀 Just shipped (2026-05)**：🌐 **ARIS-Homepage v1**（[`/homepage-generator` skill](https://github.com/wanshuiyin/ARIS-in-AI-Offer/blob/main/skills/homepage-generator/SKILL.md)）—— **fact-check 你的简历再生成单文件个人主页**：CV → DBLP/arXiv 自动 audit venue/年份/作者，硬失败拦截 venue/年份不一致与疑似编造奖项 → 单文件 HTML。[Live demo →](https://wanshuiyin.github.io/) · **希望大家秋招的时候轻松一点 🌱**
 
 <p align="center">
   <a href="https://github.com/wanshuiyin/ARIS-in-AI-Offer">
@@ -1413,7 +1413,7 @@ export OPENAI_API_KEY="your-key"
 
 ## 9. 🧰 Skills Catalog
 
-ARIS ships **74+ skills** across literature, ideation, experiments, audit,
+ARIS ships **75+ skills** across literature, ideation, experiments, audit,
 writing, talks, patents, and meta-utilities. The full catalog (with role,
 category, and requirements per skill) lives in
 **[`docs/SKILLS_CATALOG.md`](docs/SKILLS_CATALOG.md)** to keep this README
