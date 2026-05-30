@@ -1,0 +1,16 @@
+{
+  "_comment": "Merge this into your project's .claude/settings.json. Makes Bash structurally unable to write the skill corpus, so a read-only producer (meta-optimize / corpus-audit) — which has Bash but no Write/Edit — cannot mutate the corpus by any path. Adjust the path to corpus_write_guard.py for your checkout (or resolve via the canonical chain).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/templates/claude-hooks/corpus_write_guard.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
