@@ -14,7 +14,7 @@
 
 🤖 **AI agents:** Read [`AGENT_GUIDE.md`](AGENT_GUIDE.md) instead — structured for LLM consumption, not human browsing.
 
-🛡️ **ARIS audits its own output → now [Anti-Autoresearch](https://github.com/wanshuiyin/Anti-Autoresearch) audits everyone's.** It catalogs **27 common autoresearch hack-patterns** and checks a submission for them **end-to-end**, producing a deterministic, reviewer-ready integrity report. *Self-consistency + fabrication forensics, **not** an AI-text detector.*
+🛡️ **ARIS audits its own output → now [Anti-Autoresearch](https://github.com/wanshuiyin/Anti-Autoresearch) audits everyone's.** It catalogs **39 autoresearch hack-patterns across 7 families** and checks a submission for them **end-to-end**, producing a deterministic, reviewer-ready integrity report. *Self-consistency + fabrication forensics, **not** an AI-text detector.*
 
 <p align="center"><em>The field has put up with unreliable autoresearch long enough —<br>Anti-Autoresearch is the read that finally catches it.</em></p>
 
