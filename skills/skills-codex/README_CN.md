@@ -4,7 +4,7 @@
 
 ## 当前范围
 
-- 基座覆盖：主线 `skills/` 的 `79` 个 skill 全量同步
+- 基座覆盖：主线 `skills/` 的 `80` 个 skill 全量同步
 - 支持目录：`shared-references/`
 - reviewer-heavy skill 的默认 reviewer 契约：
   - 首轮：`spawn_agent`

@@ -42,7 +42,8 @@
 #   S6  Concurrent runs in same project serialize via mkdir lockdir.
 #   S7  Crash mid-apply leaves the previous manifest intact; rerun adopts.
 #   S8  Uninstall revalidates each managed symlink's target before removing.
-#   S9  If .aris/, .claude/, or .claude/skills/ is itself a symlink, abort.
+#   S9  If .aris/, .claude/, .claude/skills/, or .claude/agents/ is itself a
+#       symlink, abort.
 #   S10 Reject upstream entries that are symlinks to outside aris-repo.
 #   S11 Revalidate exact target match (lstat + readlink) before every mutation.
 #   S12 The optional `.aris/tools` symlink (added in #174) is the only managed
@@ -51,6 +52,12 @@
 #       path or differently-targeted symlink at `.aris/tools` is left alone.
 #   S12 Temp files live in the same directory as the destination.
 #   S13 Skill names must match ^[A-Za-z0-9][A-Za-z0-9._-]*$ (slug regex).
+#
+# Managed entry kinds (all manifest-tracked symlinks, same lifecycle):
+#   skill|support -> <project>/.claude/skills/<name>      <- repo skills/<name>
+#   agent         -> <project>/.claude/agents/<name>.md  <- repo agents/<name>.md
+#       Registered Claude Code subagents ride the same plan/apply/manifest
+#       pipeline as skills; only the source/target dir differs (entry_*_rel).
 
 set -euo pipefail
 
@@ -61,6 +68,7 @@ MANIFEST_PREV_NAME="installed-skills.txt.prev"
 ARIS_DIR_NAME=".aris"
 LOCK_DIR_NAME=".install.lock.d"
 SKILLS_REL=".claude/skills"
+AGENTS_REL=".claude/agents"   # registered Claude Code subagents (agents/<name>.md)
 DOC_FILE_NAME="CLAUDE.md"
 BLOCK_BEGIN="<!-- ARIS:BEGIN -->"
 BLOCK_END="<!-- ARIS:END -->"
@@ -247,7 +255,39 @@ build_upstream_inventory() {
     for s in "${SUPPORT_NAMES[@]}"; do
         if [[ -d "$skills_dir/$s" ]]; then entries+=("support|$s"); fi
     done
+    # registered Claude Code subagents (agents/<name>.md)
+    local agents_dir="$repo/agents"
+    if [[ -d "$agents_dir" ]]; then
+        for f in "$agents_dir"/*.md; do
+            [[ -f "$f" ]] || continue
+            name="$(basename "$f" .md)"
+            is_safe_name "$name" || { warn "skipping unsafe upstream agent name: $name"; continue; }
+            # S10: agent source must not be a symlink leading outside the repo
+            if is_symlink "$f"; then
+                local resolved; resolved="$(canonicalize "$f")"
+                [[ "$resolved" == "$repo"/* ]] || { warn "skipping upstream agent symlink leading outside repo: $name -> $resolved"; continue; }
+            fi
+            entries+=("agent|$name")
+        done
+    fi
     printf "%s\n" "${entries[@]}"
+}
+
+# Per-kind source/target relative paths (kind-agnostic plan pipeline).
+# skill|support -> skills/<name> / .claude/skills/<name>; agent -> agents/<name>.md / .claude/agents/<name>.md
+entry_source_rel() {  # $1=kind $2=name
+    case "$1" in
+        skill|support) echo "skills/$2" ;;
+        agent)         echo "agents/$2.md" ;;
+        *)             echo "skills/$2" ;;
+    esac
+}
+entry_target_rel() {  # $1=kind $2=name
+    case "$1" in
+        skill|support) echo "$SKILLS_REL/$2" ;;
+        agent)         echo "$AGENTS_REL/$2.md" ;;
+        *)             echo "$SKILLS_REL/$2" ;;
+    esac
 }
 
 # Parse manifest into a global associative-style array via temp file lookup
@@ -326,11 +366,11 @@ MANIFEST_PREV="$PROJECT_ARIS_DIR/$MANIFEST_PREV_NAME"
 LOCK_DIR="$PROJECT_ARIS_DIR/$LOCK_DIR_NAME"
 DOC_FILE="$PROJECT_PATH/$DOC_FILE_NAME"
 
-# ─── S9: refuse if .aris / .claude / .claude/skills is itself a symlink ───────
-# (.aris and .claude/skills may not exist yet — only check if present.)
+# ─── S9: refuse if .aris / .claude / .claude/skills / .claude/agents is itself a symlink ──
+# (.aris, .claude/skills and .claude/agents may not exist yet — only check if present.)
 check_no_symlinked_parents() {
     local p
-    for p in "$PROJECT_ARIS_DIR" "$PROJECT_PATH/.claude" "$PROJECT_SKILLS_DIR"; do
+    for p in "$PROJECT_ARIS_DIR" "$PROJECT_PATH/.claude" "$PROJECT_SKILLS_DIR" "$PROJECT_PATH/$AGENTS_REL"; do
         if is_symlink "$p"; then
             die "S9: $p is a symlink — refusing to install (would mutate symlink target)"
         fi
@@ -447,13 +487,13 @@ compute_plan() {
     # Iterate upstream entries
     while IFS='|' read -r kind name; do
         [[ -z "$name" ]] && continue
-        target_path="$PROJECT_SKILLS_DIR/$name"
-        expected_target="$SKILLS_DIR_ABS/$name"
+        target_path="$PROJECT_PATH/$(entry_target_rel "$kind" "$name")"
+        expected_target="$ARIS_REPO/$(entry_source_rel "$kind" "$name")"
         if [[ -L "$target_path" ]]; then
             current_target="$(read_link_target "$target_path")"
             # Convert relative readlink to absolute (relative to symlink's dir)
             if [[ "$current_target" != /* ]]; then
-                current_target="$(canonicalize "$PROJECT_SKILLS_DIR/$current_target")"
+                current_target="$(canonicalize "$(dirname "$target_path")/$current_target")"
             fi
             local in_manifest=false
             if [[ -n "$(manifest_lookup_target "$manifest_data" "$name")" ]]; then in_manifest=true; fi
@@ -533,7 +573,8 @@ write_manifest_tmp() {
         # New manifest = REUSE + ADOPT + CREATE + UPDATE_TARGET (i.e., everything that will exist as a managed symlink after apply)
         awk -F'|' '$1=="REUSE"||$1=="ADOPT"||$1=="CREATE"||$1=="UPDATE_TARGET"{print $0}' "$plan" \
         | while IFS='|' read -r action kind name _; do
-            printf "%s\t%s\tskills/%s\t%s/%s\tsymlink\n" "$kind" "$name" "$name" "$SKILLS_REL" "$name"
+            printf "%s\t%s\t%s\t%s\tsymlink\n" "$kind" "$name" \
+                "$(entry_source_rel "$kind" "$name")" "$(entry_target_rel "$kind" "$name")"
         done
     } > "$out"
 }
@@ -550,11 +591,12 @@ revalidate_symlink_target() {
 apply_plan() {
     local plan="$1" manifest_tmp="$2"
     mkdir -p "$PROJECT_SKILLS_DIR"
+    mkdir -p "$PROJECT_PATH/$AGENTS_REL"
     local action kind name extra target_path expected_target
     while IFS='|' read -r action kind name extra; do
         [[ -z "$name" ]] && continue
-        target_path="$PROJECT_SKILLS_DIR/$name"
-        expected_target="$SKILLS_DIR_ABS/$name"
+        target_path="$PROJECT_PATH/$(entry_target_rel "$kind" "$name")"
+        expected_target="$ARIS_REPO/$(entry_source_rel "$kind" "$name")"
         case "$action" in
             REUSE|ADOPT)
                 : # nothing to do; manifest will record it
@@ -564,6 +606,7 @@ apply_plan() {
                 if [[ -e "$target_path" || -L "$target_path" ]]; then
                     die "S4 violation: $target_path appeared between plan and apply"
                 fi
+                mkdir -p "$(dirname "$target_path")"
                 if $DRY_RUN; then log "  (dry-run) ln -s $expected_target $target_path"
                 else ln -s "$expected_target" "$target_path"; log "  + $name"
                 fi
@@ -749,7 +792,7 @@ do_uninstall() {
     while IFS=$'\t' read -r kind name src target mode; do
         [[ -z "$name" ]] && continue
         local target_path="$PROJECT_PATH/$target"
-        local expected="$SKILLS_DIR_ABS/$name"
+        local expected="$ARIS_REPO/$src"
         # S1: must be symlink
         is_symlink "$target_path" || { warn "S1: $target_path not a symlink, skipping"; continue; }
         # S8 + S11: revalidate target
