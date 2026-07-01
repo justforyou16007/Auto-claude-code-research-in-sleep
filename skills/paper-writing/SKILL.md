@@ -2,8 +2,11 @@
 name: paper-writing
 description: "Workflow 3: Full paper writing pipeline that goes from a narrative report to a polished, submission-ready PDF. Use when user says \"写论文全流程\", \"write paper pipeline\", \"从报告到PDF\", \"paper writing\", or wants the complete paper generation workflow."
 argument-hint: "[narrative-report-path-or-topic] [— style-ref: <source>]"
-allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, Skill, mcp__codex__codex, mcp__codex__codex-reply
+allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, Skill, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
 ---
+
+> **Paseo substrate.** This workflow (W3) runs as a paseo claude sub-agent; its sub-skills dispatch as paseo sub-agents and each audit's cross-model reviewer as a paseo codex sub-agent (fresh). `auto-paper-improvement-loop` spawns a FRESH codex reviewer each round (REVIEWER_BIAS_GUARD). See `shared-references/paseo-subagent-dispatch.md` + `paseo-reviewer-dispatch.md`. When paseo MCP is unavailable, fall back to in-process `Skill` + `mcp__codex__codex`.
 
 # Workflow 3: Paper Writing Pipeline
 
@@ -139,7 +142,7 @@ discouraged for actual submissions. See
 
 ### Phase 1: Paper Plan
 
-Invoke `/paper-plan` to create the structural outline:
+Dispatch a paseo claude sub-agent for `/paper-plan` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to create the structural outline:
 
 ```
 /paper-plan "$ARGUMENTS"
@@ -176,7 +179,7 @@ Shall I proceed with figure generation?
 
 If `— style-ref: <source>` was passed in `$ARGUMENTS` and the helper succeeded above, append `— style-ref: <source>` to every writer-side sub-skill invocation in this pipeline (Phases 1, 2b, 3, 5). Do **not** append it to reviewer/auditor invocations (Phases 4.5, 4.7, 5.5, 5.8).
 
-Invoke `/paper-figure` to generate data-driven plots and tables:
+Dispatch a paseo claude sub-agent for `/paper-figure` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to generate data-driven plots and tables:
 
 ```
 /paper-figure "PAPER_PLAN.md"
@@ -199,7 +202,7 @@ Invoke `/paper-figure` to generate data-driven plots and tables:
 
 If the paper plan includes architecture diagrams, pipeline figures, audit cascades, or method illustrations, invoke the appropriate generator based on the `illustration` parameter:
 
-**When `illustration: figurespec`** (default) — invoke `/figure-spec`:
+**When `illustration: figurespec`** (default) — dispatch a paseo claude sub-agent for `/figure-spec` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable):
 ```
 /figure-spec "[architecture/workflow description from PAPER_PLAN.md]"
 ```
@@ -210,7 +213,7 @@ If the paper plan includes architecture diagrams, pipeline figures, audit cascad
 
 If `— style-ref: <source>` was passed and the helper succeeded above, append `— style-ref: <source>` to the invocation below as well.
 
-**When `illustration: gemini`** — invoke `/paper-illustration`:
+**When `illustration: gemini`** — dispatch a paseo claude sub-agent for `/paper-illustration` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable):
 ```
 /paper-illustration "[method description from PAPER_PLAN.md or NARRATIVE_REPORT.md]"
 ```
@@ -219,7 +222,7 @@ If `— style-ref: <source>` was passed and the helper succeeded above, append `
 - Output: `figures/ai_generated/*.png`
 - Requires `GEMINI_API_KEY` environment variable
 
-**When `illustration: mermaid`** — invoke `/mermaid-diagram`:
+**When `illustration: mermaid`** — dispatch a paseo claude sub-agent for `/mermaid-diagram` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable):
 ```
 /mermaid-diagram "[method description from PAPER_PLAN.md]"
 ```
@@ -228,7 +231,7 @@ If `— style-ref: <source>` was passed and the helper succeeded above, append `
 - Output: `figures/*.mmd` + `figures/*.png`
 - Free, no API key needed
 
-**When `illustration: codex-image2`** — invoke `/paper-illustration-image2`:
+**When `illustration: codex-image2`** — dispatch a paseo claude sub-agent for `/paper-illustration-image2` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable):
 ```
 /paper-illustration-image2 "[method description from PAPER_PLAN.md or NARRATIVE_REPORT.md]"
 ```
@@ -264,7 +267,7 @@ These are complementary, not mutually exclusive: you can run multiple generators
 
 ### Phase 3: LaTeX Writing
 
-Invoke `/paper-write` to generate section-by-section LaTeX:
+Dispatch a paseo claude sub-agent for `/paper-write` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to generate section-by-section LaTeX:
 
 ```
 /paper-write "PAPER_PLAN.md"
@@ -296,7 +299,7 @@ Shall I proceed with compilation?
 
 ### Phase 4: Compilation
 
-Invoke `/paper-compile` to build the PDF:
+Dispatch a paseo claude sub-agent for `/paper-compile` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to build the PDF:
 
 ```
 /paper-compile "paper/"
@@ -331,7 +334,12 @@ Shall I proceed with the improvement loop?
 
 ```
 if paper contains \begin{theorem} or \begin{lemma} or \begin{proof}:
-    Run /proof-checker "paper/"
+    Dispatch a paseo claude sub-agent for /proof-checker "paper/" per
+    shared-references/paseo-subagent-dispatch.md (in-process Skill fallback if
+    paseo MCP unavailable). The claude sub-agent runs its detector
+    (theorem/lemma/proof regex) and spawns a paseo codex reviewer sub-agent
+    (fresh) per shared-references/paseo-reviewer-dispatch.md for the verdict,
+    writing paper/PROOF_AUDIT.json with trace_path + thread_id (= codex agent-id).
     This invokes GPT-5.5 xhigh to:
     - Verify all proof steps (hypothesis discharge, interchange justification, etc.)
     - Check for logic gaps, quantifier errors, missing domination conditions
@@ -352,7 +360,13 @@ else:
 
 ```
 if results/*.json or results/*.csv or outputs/*.json exist:
-    Run /paper-claim-audit "paper/"
+    Dispatch a paseo claude sub-agent for /paper-claim-audit "paper/" per
+    shared-references/paseo-subagent-dispatch.md (in-process Skill fallback if
+    paseo MCP unavailable). The claude sub-agent runs its detector
+    (numeric-claim regex + raw-evidence file search) and spawns a paseo codex
+    reviewer sub-agent (fresh) per shared-references/paseo-reviewer-dispatch.md
+    for the verdict, writing paper/PAPER_CLAIM_AUDIT.json with trace_path +
+    thread_id (= codex agent-id).
     Fresh zero-context reviewer compares every number in the paper
     against raw result files. Catches rounding inflation, best-seed
     cherry-pick, config mismatch, delta errors.
@@ -367,7 +381,7 @@ else:
 
 ### Phase 5: Auto Improvement Loop
 
-Invoke `/auto-paper-improvement-loop` to polish the paper:
+Dispatch a paseo claude sub-agent for `/auto-paper-improvement-loop` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to polish the paper:
 
 ```
 /auto-paper-improvement-loop "paper/"
@@ -375,11 +389,11 @@ Invoke `/auto-paper-improvement-loop` to polish the paper:
 
 If `— style-ref: <source>` was passed in `$ARGUMENTS` and the helper succeeded above, append `— style-ref: <source>` to the invocation: `/auto-paper-improvement-loop "paper/ — style-ref: <source>"`. The improvement loop's reviewer sub-agent will still NOT see the style ref (the loop's own SKILL forbids it); only the fix-implementation phase consumes it.
 
-**What this does (2 rounds):**
+**What this does (2 rounds)** — each round spawns a FRESH codex reviewer sub-agent (bias guard) per `paseo-reviewer-dispatch.md`:
 
-**Round 1:** GPT-5.5 xhigh reviews the full paper → identifies CRITICAL/MAJOR/MINOR issues → Claude Code implements fixes → recompile → save `main_round1.pdf`
+**Round 1:** GPT-5.5 xhigh reviews the full paper (fresh paseo codex reviewer sub-agent) → identifies CRITICAL/MAJOR/MINOR issues → Claude Code implements fixes → recompile → save `main_round1.pdf`
 
-**Round 2:** GPT-5.5 xhigh re-reviews with conversation context → identifies remaining issues → Claude Code implements fixes → recompile → save `main_round2.pdf`
+**Round 2:** GPT-5.5 xhigh re-reviews via a FRESH paseo codex reviewer sub-agent (bias guard — no memory of round 1) → identifies remaining issues → Claude Code implements fixes → recompile → save `main_round2.pdf`
 
 **Typical improvements:**
 - Fix assumption-model mismatches
@@ -413,7 +427,12 @@ RAW_RESULT_FILES=$(find results outputs experiments figures -type f \
   \( -name '*.json' -o -name '*.jsonl' -o -name '*.csv' -o -name '*.tsv' -o -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | head -200)
 
 if [ -n "$NUMERIC_CLAIMS" ] && [ -n "$RAW_RESULT_FILES" ]; then
-    Run /paper-claim-audit "paper/"
+    Dispatch a paseo claude sub-agent for /paper-claim-audit "paper/" per
+    shared-references/paseo-subagent-dispatch.md (in-process Skill fallback if
+    paseo MCP unavailable). The claude sub-agent runs its detector and spawns a
+    paseo codex reviewer sub-agent (fresh) per
+    shared-references/paseo-reviewer-dispatch.md for the verdict, writing
+    paper/PAPER_CLAIM_AUDIT.json with trace_path + thread_id (= codex agent-id).
     If FAIL:
         Fix mismatched numbers before the final report
 elif [ -n "$NUMERIC_CLAIMS" ]; then
@@ -432,7 +451,12 @@ THEORY_ENV_COUNT=$(rg -c '\\begin\{(theorem|lemma|proposition|corollary)\}' pape
 SCOPE_HINT=$(rg -i 'general(ization)?|broad|universal|across|any [A-Za-z]+ model|holds for' paper/sections/0*abstract* 2>/dev/null | head -1)
 
 if [ "$THEORY_ENV_COUNT" -ge 5 ] || [ -n "$SCOPE_HINT" ]; then
-    /kill-argument "paper/"
+    Dispatch a paseo claude sub-agent for /kill-argument "paper/" per
+    shared-references/paseo-subagent-dispatch.md (in-process Skill fallback if
+    paseo MCP unavailable). The claude sub-agent runs its detector
+    (theorem/scope regex) and spawns a paseo codex reviewer sub-agent (fresh)
+    per shared-references/paseo-reviewer-dispatch.md to classify adversarial
+    points (the skill computes the final verdict from per-point counts).
     KILL_VERDICT=$(jq -r '.verdict' paper/KILL_ARGUMENT.json)
     KILL_REASON=$(jq -r '.reason_code' paper/KILL_ARGUMENT.json)
 fi
@@ -457,9 +481,14 @@ After the final paper-claim-audit passes, run `/citation-audit` to verify every 
 
 ```
 if paper/references.bib (or paper.bib) exists and contains entries cited from sec/*.tex:
-    Run /citation-audit "paper/"
-    Fresh cross-family reviewer (gpt-5.5 via Codex MCP) with web/DBLP/arXiv lookup
-    verifies each entry:
+    Dispatch a paseo claude sub-agent for /citation-audit "paper/" per
+    shared-references/paseo-subagent-dispatch.md (in-process Skill fallback if
+    paseo MCP unavailable). The claude sub-agent runs its detector (bib + \cite
+    regex) and spawns a paseo codex reviewer sub-agent (fresh) per
+    shared-references/paseo-reviewer-dispatch.md for the verdict, writing
+    paper/CITATION_AUDIT.json with trace_path + thread_id (= codex agent-id).
+    Fresh cross-family reviewer (gpt-5.5 via paseo codex sub-agent — Codex MCP
+    fallback) with web/DBLP/arXiv lookup verifies each entry:
       (i)   EXISTENCE — paper resolves at claimed arXiv ID / DOI / venue
       (ii)  METADATA — author names, year, venue, title match canonical sources
       (iii) CONTEXT — cited paper actually establishes the claim it supports
@@ -549,9 +578,14 @@ skipping audits while claiming to have run them.
 
 #### Invoking the three audits
 
-Each sub-audit runs in a **fresh Codex thread** (never `codex-reply`,
+Each sub-audit dispatches a paseo claude sub-agent (per
+`shared-references/paseo-subagent-dispatch.md`; in-process `Skill` fallback if
+paseo MCP unavailable) that spawns a **FRESH paseo codex reviewer sub-agent**
+per `shared-references/paseo-reviewer-dispatch.md` (never continuation —
 never pass prior audit output as context — this preserves reviewer
-independence per `shared-references/reviewer-independence.md`).
+independence per `shared-references/reviewer-independence.md`). Each writes its
+JSON (`PROOF_AUDIT.json` / `PAPER_CLAIM_AUDIT.json` / `CITATION_AUDIT.json`)
+with `trace_path` + `thread_id` (= codex agent-id).
 
 Each sub-audit **always** emits its JSON artifact, even when the content
 detector is negative. A detector-negative run emits verdict
@@ -560,13 +594,16 @@ emission" section of each audit's SKILL.md.
 
 Order:
 
-1. `/proof-checker "paper/"` → writes `paper/PROOF_AUDIT.json` (emits
-   `NOT_APPLICABLE` if the paper contains no theorems / lemmas / proofs)
-2. `/paper-claim-audit "paper/"` → writes `paper/PAPER_CLAIM_AUDIT.json`
-   (emits `NOT_APPLICABLE` if the paper has no numeric claims; emits
-   `BLOCKED` if numeric claims exist but raw result files are missing)
-3. `/citation-audit "paper/"` → writes `paper/CITATION_AUDIT.json`
-   (emits `NOT_APPLICABLE` if no `.bib` file or no `\cite{...}` usage)
+1. Dispatch a paseo claude sub-agent for `/proof-checker "paper/"` → writes
+   `paper/PROOF_AUDIT.json` (emits `NOT_APPLICABLE` if the paper contains no
+   theorems / lemmas / proofs)
+2. Dispatch a paseo claude sub-agent for `/paper-claim-audit "paper/"` → writes
+   `paper/PAPER_CLAIM_AUDIT.json` (emits `NOT_APPLICABLE` if the paper has no
+   numeric claims; emits `BLOCKED` if numeric claims exist but raw result files
+   are missing)
+3. Dispatch a paseo claude sub-agent for `/citation-audit "paper/"` → writes
+   `paper/CITATION_AUDIT.json` (emits `NOT_APPLICABLE` if no `.bib` file or no
+   `\cite{...}` usage)
 
 #### Running the verifier
 

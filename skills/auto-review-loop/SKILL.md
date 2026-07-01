@@ -2,8 +2,11 @@
 name: auto-review-loop
 description: Autonomous multi-round research review loop. Repeatedly reviews via external reviewer backend (Codex or manual), implements fixes, and re-reviews until positive assessment or max rounds reached. Use when user says "auto review loop", "review until it passes", or wants autonomous iterative improvement.
 argument-hint: [topic-or-scope]
-allowed-tools: Bash(*), Read, Grep, Glob, Write, Edit, Skill, mcp__codex__codex, mcp__codex__codex-reply, mcp__manual_review__review, mcp__manual_review__review_reply
+allowed-tools: Bash(*), Read, Grep, Glob, Write, Edit, Skill, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent, mcp__manual_review__review, mcp__manual_review__review_reply
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
 ---
+
+> **Paseo substrate.** This workflow (W2) runs as ONE paseo claude agent looping rounds 1→N internally; round 1 spawns a fresh codex reviewer sub-agent, round 2+ continues it (`send_agent_prompt`, reviewer memory — the codex-reply analog). See `shared-references/paseo-subagent-dispatch.md` (fence) + `paseo-reviewer-dispatch.md` (fresh-vs-continuation). When paseo MCP is unavailable, fall back to in-process `Skill` + `mcp__codex__codex`.
 
 # Auto Review Loop: Autonomous Research Improvement
 
@@ -26,14 +29,14 @@ Autonomously iterate: review → implement fixes → re-review, until the extern
 - POSITIVE_THRESHOLD: score >= 6/10 **AND** verdict ∈ {"ready", "almost"} — **both** must hold. This matches the operative Phase-E STOP CONDITION exactly; the verdict vocabulary is {"ready", "almost", "not ready"} (a high score with a "not ready" verdict does NOT stop the loop). Earlier wording here used `or` and a stale verdict set ("accept"/"sufficient"/"ready for submission") — that was an internal inconsistency; the `AND` form is authoritative.
 - REVIEW_DOC: `review-stage/AUTO_REVIEW.md` (cumulative log) *(fall back to `./AUTO_REVIEW.md` for legacy projects)*
 - REVIEWER_MODEL = `gpt-5.5` — Default model for the Codex backend. Must be an OpenAI model (e.g., `gpt-5.5`, `o3`, `gpt-4o`). Manual backend uses whatever model the user chooses.
-- **REVIEWER_BACKEND = `codex`** — Default: Codex MCP (xhigh). Override with `— reviewer: oracle-pro` for Oracle MCP, or `— reviewer: manual` for Manual Review MCP. If manual-review MCP is unavailable, stop and print the install command; do not fall back to Codex. See `shared-references/reviewer-routing.md`.
+- **REVIEWER_BACKEND = `codex`** — Default: paseo codex sub-agent (codex MCP fallback when paseo unavailable; xhigh). Override with `— reviewer: oracle-pro` for Oracle MCP, or `— reviewer: manual` for Manual Review MCP. If manual-review MCP is unavailable, stop and print the install command; do not fall back to Codex. See `shared-references/reviewer-routing.md`.
 - **OUTPUT_DIR = `review-stage/`** — All review-stage outputs go here. Create the directory if it doesn't exist.
 - **HUMAN_CHECKPOINT = false** — When `true`, pause after each round's review (Phase B) and present the score + weaknesses to the user. Wait for user input before proceeding to Phase C. The user can: approve the suggested fixes, provide custom modification instructions, skip specific fixes, or stop the loop early. When `false` (default), the loop runs fully autonomously.
 - **COMPACT = false** — When `true`, (1) read `EXPERIMENT_LOG.md` and `findings.md` instead of parsing full logs on session recovery, (2) append key findings to `findings.md` after each round.
 - **REVIEWER_DIFFICULTY = medium** — Controls how adversarial the reviewer is. Three levels:
   - `medium` (default): Current behavior — MCP-based review, the executor controls what context the reviewer sees.
   - `hard`: Adds **Reviewer Memory** (the reviewer tracks its own suspicions across rounds) + **Debate Protocol** (the executor can rebut, the reviewer rules).
-  - `nightmare`: Everything in `hard` + **Codex exec reviewer reads the repo directly** via `codex exec` (the executor cannot filter what the reviewer sees) + **Adversarial Verification** (the reviewer independently checks if code matches claims).
+  - `nightmare`: Everything in `hard` + **the reviewer reads the repo directly** via a paseo codex agent in `full-access` mode (the `codex exec` analog — the executor cannot filter what the reviewer sees) + **Adversarial Verification** (the reviewer independently checks if code matches claims).
 - **RENDER_HTML = true** — When `true` (default), auto-render `review-stage/AUTO_REVIEW.md` to HTML on loop termination via `/render-html`. Uses `--no-review` (the loop itself IS the cross-model review; the HTML is a structural conversion). Set `false` to skip, or pass `— render html: false`.
 
 > ⚠️ **Nightmare + Manual incompatibility**: If `REVIEWER_BACKEND = manual` and `REVIEWER_DIFFICULTY = nightmare`, STOP with:
@@ -45,9 +48,11 @@ Autonomously iterate: review → implement fixes → re-review, until the extern
 
 When calling the reviewer, branch on REVIEWER_BACKEND:
 
-**If REVIEWER_BACKEND = `codex`:**
-  Use `mcp__codex__codex` for new review threads.
-  Use `mcp__codex__codex-reply` for follow-up rounds (reuse threadId).
+**If REVIEWER_BACKEND = `codex`** (default):
+  Round 1 (fresh): spawn a paseo codex reviewer sub-agent (fresh) per `shared-references/paseo-reviewer-dispatch.md`; persist its agent-id to `REVIEW_STATE.json`'s `threadId` field.
+  Round 2+ (continuation): continue the SAME paseo codex reviewer sub-agent via `send_agent_prompt` per `paseo-reviewer-dispatch.md` (the codex-reply analog — the reviewer checks resolution against its OWN prior critique).
+  `threadId` now holds the paseo codex agent-id (field name unchanged, semantics identical — it is the continuation handle); the Debate rebuttal step is likewise a continuation.
+  When paseo MCP is unavailable, fall back to `mcp__codex__codex` (fresh) / `mcp__codex__codex-reply` (continuation) per `reviewer-routing.md`.
 
 **If REVIEWER_BACKEND = `manual`:**
   Use `mcp__manual_review__review` for new review threads with:
@@ -118,7 +123,7 @@ Long-running loops may hit the context window limit, triggering automatic compac
 
 ##### Medium (default) — MCP Review
 
-Send comprehensive context to the external reviewer using the selected backend.
+Send comprehensive context to the external reviewer using the selected backend. Dispatch per the Reviewer Calling Convention above — round 1 spawns a fresh paseo codex reviewer sub-agent, round 2+ continues it via `send_agent_prompt`; the `mcp__codex__codex` form below is the codex-MCP fallback (prompt body identical on either substrate).
 
 *For codex backend:*
 
@@ -147,7 +152,7 @@ mcp__codex__codex:
 
 *For manual backend:* use `mcp__manual_review__review` with the `prompt` text above and `config: {"model_reasoning_effort": "xhigh"}`. Save the returned `threadId`.
 
-If this is round 2+, use `mcp__codex__codex-reply` (codex) or `mcp__manual_review__review_reply` (manual) with the saved threadId.
+If this is round 2+, continue the SAME paseo codex reviewer sub-agent via `send_agent_prompt` (the codex-reply analog) per `paseo-reviewer-dispatch.md`, or `mcp__manual_review__review_reply` (manual) with the saved threadId. (`mcp__codex__codex-reply` is the codex-MCP fallback.)
 
 ##### Hard — MCP Review + Reviewer Memory
 
@@ -187,7 +192,7 @@ mcp__codex__codex:
 
 ##### Nightmare — Codex Exec (GPT reads repo directly)
 
-**Do NOT use MCP.** Instead, let GPT access the repo autonomously via `codex exec`:
+**Do NOT use the curated-prompt review path.** Instead grant the reviewer full repo access — a paseo codex sub-agent in `full-access` mode per `shared-references/paseo-reviewer-dispatch.md` (the `codex exec` analog; round 1 fresh, round 2+ continued via `send_agent_prompt`). The `codex exec` form below is the fallback when paseo MCP is unavailable:
 
 ```bash
 codex exec "$(cat <<'PROMPT'
@@ -287,9 +292,9 @@ Rules for the executor's rebuttal:
 
 Send the executor's rebuttal back to the reviewer for a ruling:
 
-*Hard mode — use the selected backend for the rebuttal step:*
+*Hard mode — continue the SAME reviewer (continuation, reviewer memory) for the rebuttal step per the Reviewer Calling Convention:*
 
-*For codex:*
+*For codex:* continue the paseo codex reviewer sub-agent via `send_agent_prompt` to its persisted agent-id (`threadId`) — the reviewer rules on the rebuttal against its OWN prior critique (`mcp__codex__codex-reply` below is the codex-MCP fallback):
 ```
 mcp__codex__codex-reply:
   threadId: [saved]
@@ -315,7 +320,7 @@ The prompt content:
     Then update your score if any weaknesses were withdrawn.
 ```
 
-*Nightmare mode (codex exec):*
+*Nightmare mode — continue the SAME paseo codex reviewer in `full-access` mode via `send_agent_prompt` (the `codex exec` analog; the `codex exec` block below is the fallback when paseo MCP is unavailable):*
 ```bash
 codex exec "$(cat <<'PROMPT'
 You are the same adversarial reviewer. The author rebuts your review:
@@ -402,7 +407,7 @@ Prioritization rules:
 If experiments were launched:
 - Monitor remote sessions for completion
 - Collect results from output files and logs
-- **Training quality check** — if W&B is configured, invoke `/training-check` to verify training was healthy (no NaN, no divergence, no plateau). If W&B not available, skip silently. Flag any quality issues in the next review round.
+- **Training quality check** — if W&B is configured, dispatch a paseo claude sub-agent for `/training-check` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to verify training was healthy (no NaN, no divergence, no plateau). If W&B not available, skip silently. Flag any quality issues in the next review round.
 
 #### Phase E: Document Round
 
@@ -470,13 +475,13 @@ When loop ends (positive assessment or max rounds):
 2. Write final summary to `review-stage/AUTO_REVIEW.md`
 3. Update project notes with conclusions
 4. **Write method/pipeline description** to `review-stage/AUTO_REVIEW.md` under a `## Method Description` section — a concise 1-2 paragraph description of the final method, its architecture, and data flow. This serves as input for `/paper-illustration` in Workflow 3 (so it can generate architecture diagrams automatically).
-5. **Generate claims from results** — invoke `/result-to-claim` to convert experiment results from `review-stage/AUTO_REVIEW.md` into structured paper claims. Output: `CLAIMS_FROM_RESULTS.md`. This bridges Workflow 2 → Workflow 3 so `/paper-plan` can directly use validated claims instead of extracting them from scratch. If `/result-to-claim` is not available, skip silently.
+5. **Generate claims from results** — dispatch a paseo claude sub-agent for `/result-to-claim` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to convert experiment results from `review-stage/AUTO_REVIEW.md` into structured paper claims. Output: `CLAIMS_FROM_RESULTS.md`. This bridges Workflow 2 → Workflow 3 so `/paper-plan` can directly use validated claims instead of extracting them from scratch. If `/result-to-claim` is not available, skip silently.
 6. If stopped at max rounds without positive assessment:
    - List remaining blockers
    - Estimate effort needed for each
    - Suggest whether to continue manually or pivot
 7. **Feishu notification** (if configured): Send `pipeline_done` with final score progression table
-8. **Render HTML view** (if `RENDER_HTML = true`, default): invoke `/render-html` on the cumulative review log:
+8. **Render HTML view** (if `RENDER_HTML = true`, default): dispatch a paseo claude sub-agent for `/render-html` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) on the cumulative review log:
    ```
    /render-html "review-stage/AUTO_REVIEW.md" --no-review --state review-stage/REVIEW_STATE.json
    ```
@@ -487,7 +492,7 @@ When loop ends (positive assessment or max rounds):
 - **Large file handling**: If the Write tool fails due to file size, immediately retry using Bash (`cat << 'EOF' > file`) to write in chunks. Do NOT ask the user for permission — just do it silently.
 
 - ALWAYS use `config: {"model_reasoning_effort": "xhigh"}` for maximum reasoning depth
-- Save threadId from first call; use the appropriate reply tool (`mcp__codex__codex-reply` or `mcp__manual_review__review_reply`) for subsequent rounds per the Reviewer Calling Convention
+- Save the paseo codex reviewer agent-id (round 1) to `threadId`; continue the SAME agent via `send_agent_prompt` for subsequent rounds (or `mcp__manual_review__review_reply` for the manual backend) per the Reviewer Calling Convention
 - **Anti-hallucination citations**: When adding references during fixes, NEVER fabricate BibTeX. Use the same DBLP → CrossRef → `[VERIFY]` chain as `/paper-write`: (1) `curl -s "https://dblp.org/search/publ/api?q=TITLE&format=json"` → get key → `curl -s "https://dblp.org/rec/{key}.bib"`, (2) if not found, `curl -sLH "Accept: application/x-bibtex" "https://doi.org/{doi}"`, (3) if both fail, mark with `% [VERIFY]`. Do NOT generate BibTeX from memory.
 - Be honest — include negative results and failed experiments
 - Do NOT hide weaknesses to game a positive score
@@ -499,7 +504,7 @@ When loop ends (positive assessment or max rounds):
 
 ## Prompt Template for Round 2+
 
-Use the selected backend. *For codex:* `mcp__codex__codex-reply` with the saved threadId. *For manual:* `mcp__manual_review__review_reply` with the saved threadId.
+Use the selected backend. *For codex:* continue the SAME paseo codex reviewer sub-agent via `send_agent_prompt` to the saved `threadId` (paseo codex agent-id) per `paseo-reviewer-dispatch.md` — the codex-reply analog; the reviewer checks resolution against its OWN prior critique. (`mcp__codex__codex-reply` is the codex-MCP fallback.) *For manual:* `mcp__manual_review__review_reply` with the saved threadId.
 
 ```
 [For codex:] mcp__codex__codex-reply:
@@ -520,4 +525,4 @@ Use the selected backend. *For codex:* `mcp__codex__codex-reply` with the saved 
 
 ## Review Tracing
 
-After each reviewer call (`mcp__codex__codex`, `mcp__codex__codex-reply`, `mcp__manual_review__review`, or `mcp__manual_review__review_reply`), save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).
+After each reviewer call (`mcp__paseo__create_agent` fresh / `mcp__paseo__send_agent_prompt` continuation; `mcp__manual_review__review` / `mcp__manual_review__review_reply`; `mcp__codex__codex` / `mcp__codex__codex-reply` as fallback), save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).

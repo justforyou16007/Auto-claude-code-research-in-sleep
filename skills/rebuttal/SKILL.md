@@ -2,8 +2,11 @@
 name: rebuttal
 description: "Workflow 4: Submission rebuttal pipeline. Parses external reviews, enforces coverage and grounding, drafts a safe text-only rebuttal under venue limits, and manages follow-up rounds. Use when user says \"rebuttal\", \"reply to reviewers\", \"ICML rebuttal\", \"OpenReview response\", or wants to answer external reviews safely."
 argument-hint: [paper-path-or-review-bundle]
-allowed-tools: Bash(*), Read, Grep, Glob, Write, Edit, Skill, mcp__codex__codex, mcp__codex__codex-reply, mcp__manual_review__review, mcp__manual_review__review_reply
+allowed-tools: Bash(*), Read, Grep, Glob, Write, Edit, Skill, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent, mcp__manual_review__review, mcp__manual_review__review_reply
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
 ---
+
+> **Paseo substrate.** This workflow runs as a paseo claude sub-agent; its stress-test reviewer is a paseo codex sub-agent (fresh for the first stress test, continued for follow-up probes). See `shared-references/paseo-subagent-dispatch.md` + `paseo-reviewer-dispatch.md`. When paseo MCP is unavailable, fall back to in-process `Skill` + `mcp__codex__codex`.
 
 # Workflow 4: Rebuttal
 
@@ -57,9 +60,11 @@ Workflow 4:   rebuttal (post-submission external reviews)
 
 When calling the reviewer for stress-testing, branch on REVIEWER_BACKEND:
 
-**If REVIEWER_BACKEND = `codex`:**
-  Use `mcp__codex__codex` for new review threads.
-  Use `mcp__codex__codex-reply` for follow-up rounds (reuse threadId).
+**If REVIEWER_BACKEND = `codex`** (default):
+  Fresh stress test (base round): spawn a paseo codex reviewer sub-agent (fresh) per `shared-references/paseo-reviewer-dispatch.md`; persist its agent-id to `threadId`.
+  Follow-up probes / continuation (focused rounds, Phase 8 follow-ups): continue the SAME paseo codex reviewer sub-agent via `send_agent_prompt` per `paseo-reviewer-dispatch.md` (the codex-reply analog — the reviewer checks resolution against its OWN prior critique).
+  `threadId` now holds the paseo codex agent-id (field name unchanged, semantics identical — it is the continuation handle).
+  When paseo MCP is unavailable, fall back to `mcp__codex__codex` (fresh) / `mcp__codex__codex-reply` (continuation) per `reviewer-routing.md`.
 
 **If REVIEWER_BACKEND = `manual`:**
   Use `mcp__manual_review__review` for new review threads with:
@@ -146,7 +151,7 @@ If the strategy plan identifies issues that require new empirical evidence (tagg
    - Success criterion (what result would satisfy the reviewer)
    - Estimated GPU-hours
 
-2. Invoke `/experiment-bridge` with the mini plan:
+2. Dispatch a paseo claude sub-agent for `/experiment-bridge` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) with the mini plan:
    ```
    /experiment-bridge "rebuttal/REBUTTAL_EXPERIMENT_PLAN.md"
    ```
@@ -262,7 +267,7 @@ Run all lints:
 
 ### Phase 6: External Reviewer Stress Test
 
-Use the selected backend. *For codex:*
+Use the selected backend. The base round spawns a fresh paseo codex reviewer sub-agent (fresh) per `shared-references/paseo-reviewer-dispatch.md`; the `mcp__codex__codex` form below is the codex-MCP fallback (prompt body identical on either substrate). *For codex:*
 
 ```
 mcp__codex__codex:
@@ -283,7 +288,7 @@ mcp__codex__codex:
 
 *For manual:* use `mcp__manual_review__review` with the same prompt and `config: {"model_reasoning_effort": "xhigh"}`.
 
-**Iterations.** Run the base round on the full draft. Then run focused follow-up rounds on each `reviewer_priority: pivotal` response, terminating when the reviewer returns no new substantive issues. Hard cap at 5 rounds total. Save each round to `rebuttal/MCP_STRESS_TEST_round<N>.md`; the highest round number represents the final state. If any hard safety blocker remains → revise before finalizing.
+**Iterations.** Run the base round on the full draft. Then run focused follow-up rounds (continuation — continue the same paseo codex reviewer sub-agent via `send_agent_prompt` per `paseo-reviewer-dispatch.md`, the codex-reply analog) on each `reviewer_priority: pivotal` response, terminating when the reviewer returns no new substantive issues. Hard cap at 5 rounds total. Save each round to `rebuttal/MCP_STRESS_TEST_round<N>.md`; the highest round number represents the final state. If any hard safety blocker remains → revise before finalizing.
 
 ### Phase 7: Finalize
 
@@ -327,12 +332,12 @@ When new reviewer comments arrive:
 3. Draft **delta reply only** (not full rewrite)
 4. Update `rebuttal/REVISION_PLAN.md` in place — add any new checklist items introduced by the follow-up, tick off items the author has already completed, and keep existing items' status current
 5. Re-run safety lints
-6. Use the appropriate reply tool for continuity if useful (per Reviewer Calling Convention)
+6. Continue the same paseo codex reviewer sub-agent via `send_agent_prompt` per `paseo-reviewer-dispatch.md` if continuity is useful (the codex-reply analog; `mcp__codex__codex-reply` is the codex-MCP fallback)
 7. Rules: escalate technically not rhetorically; concede if reviewer is correct; stop arguing if reviewer is immovable and no new evidence exists
 
 ### Phase 9: Render HTML view (auto, when `RENDER_HTML = true`, default)
 
-After Phase 6 (initial rebuttal) or Phase 8 (follow-up rounds) finalize `rebuttal/REBUTTAL_DRAFT_rich.md`, invoke `/render-html` on the detailed draft:
+After Phase 6 (initial rebuttal) or Phase 8 (follow-up rounds) finalize `rebuttal/REBUTTAL_DRAFT_rich.md`, dispatch a paseo claude sub-agent for `/render-html` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) on the detailed draft:
 
 ```
 /render-html "rebuttal/REBUTTAL_DRAFT_rich.md"
@@ -365,4 +370,4 @@ Skip if `RENDER_HTML = false`.
 
 ## Review Tracing
 
-After each reviewer call (`mcp__codex__codex`, `mcp__codex__codex-reply`, `mcp__manual_review__review`, or `mcp__manual_review__review_reply`), save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).
+After each reviewer call (`mcp__paseo__create_agent` fresh / `mcp__paseo__send_agent_prompt` continuation; `mcp__manual_review__review` / `mcp__manual_review__review_reply`; `mcp__codex__codex` / `mcp__codex__codex-reply` as fallback), save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).

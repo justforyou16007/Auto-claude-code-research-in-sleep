@@ -194,6 +194,33 @@ acquit the work the pipeline produces.
 
 One-liner: **a heartbeat may say "keep going," never "good enough."**
 
+### Paseo driver note
+
+When the pipeline runs on the paseo substrate (orchestrator + W-agents as
+paseo parent-child agents per `paseo-subagent-dispatch.md`), the **driver** is
+the orchestrator session's self-target `create_heartbeat`. The **doctrine
+above is unchanged** — only the mechanism that delivers the tick is paseo's,
+not `/loop` / `CronCreate`. Two paseo-specific constraints follow directly from
+the existing fence and are restated here so a paseo driver author does not
+re-derive them:
+
+- **Never `send_agent_prompt` to a running verdict agent.** Paseo
+  notifications use `replaceRunning: true`, so a heartbeat prompt to an
+  in-flight W2/W3 (or their codex reviewer) would **interrupt** the round it
+  is mid-way through — silently corrupting the verdict. The heartbeat may
+  `get_agent_status` / read on-disk artifacts to detect a stall, but once a
+  verdict agent is `running` it is hands-off until it `notifyOnFinish`-es.
+- **Nudge Type-A sub-phases only.** A stalled Type-A sub-phase (a blocked
+  experiment job, a dropped monitor) may be nudged (re-dispatch its
+  sub-agent). A stalled Type-B verdict phase must NOT be re-created or
+  re-prompted by the heartbeat — the fence forbids it; recovery is a
+  human/cron decision, as below.
+
+The watchdog + `iteration_log.py` machinery is identical: the heartbeat
+writes its state file first each tick, registers with the watchdog, and
+records new-finding counts via the canonical resolver chain. The paseo
+substrate changes **where the tick comes from**, not what the tick may do.
+
 ## Loop self-heartbeat + watchdog liveness (catch a silent death)
 
 A `/loop` or `CronCreate` heartbeat is parasitic on a living session; if it dies

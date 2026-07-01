@@ -2,8 +2,11 @@
 name: citation-audit
 description: "Zero-context verification that every bibliographic entry in the paper is real, correctly attributed, and used in a context the cited paper actually supports — catching hallucinated authors, wrong years, fabricated venues, version mismatches, and wrong-context citations. Use when user says \"审查引用\", \"check citations\", \"citation audit\", \"verify references\", \"引用核对\", or before submission to ensure bibliography integrity."
 argument-hint: "[paper-directory-or-bib-file] [--uncited] [— soft-only]"
-allowed-tools: Bash(*), Read, Grep, Glob, Edit, Write, mcp__codex__codex, WebSearch, WebFetch
+allowed-tools: Bash(*), Read, Grep, Glob, Edit, Write, Skill, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent, WebSearch, WebFetch
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
 ---
+
+> **Paseo substrate.** This skill runs inside a paseo claude sub-agent; its cross-model citation reviewer is a paseo codex sub-agent (fresh). See `shared-references/paseo-reviewer-dispatch.md`. When paseo MCP is unavailable, fall back to `mcp__codex__codex`.
 
 # Citation Audit
 
@@ -82,8 +85,9 @@ Save the extracted contexts to `paper/.aris/citation-audit/contexts.txt` so the 
 
 ### Step 3: Send each entry to fresh cross-model reviewer
 
-For each **cited** bib entry — i.e., each key in `cited_keys` with at least one extracted citation context — invoke `mcp__codex__codex` (NOT `codex-reply` — fresh thread per entry, or batch with explicit per-entry isolation). Do **not** send entries in `bib_keys \ cited_keys` to the reviewer; those are detect-only and surface only when `--uncited` is explicitly enabled (see "Uncited Entry Detection" below).
+For each **cited** bib entry — i.e., each key in `cited_keys` with at least one extracted citation context — spawn a paseo codex reviewer sub-agent (fresh) per `shared-references/paseo-reviewer-dispatch.md` (fresh agent per entry, or batch with explicit per-entry isolation). Do **not** send entries in `bib_keys \ cited_keys` to the reviewer; those are detect-only and surface only when `--uncited` is explicitly enabled (see "Uncited Entry Detection" below).
 
+Documented fallback form (when paseo MCP is unavailable, use `mcp__codex__codex` as below):
 ```
 mcp__codex__codex:
   model: gpt-5.5
@@ -306,7 +310,7 @@ Together: code → result → numerical claim → cited claim. Each layer has cr
 
 ## Review Tracing
 
-After each `mcp__codex__codex` reviewer call, save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/citation-audit/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).
+After each paseo codex reviewer call, save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/citation-audit/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).
 
 ## Output Contract
 
@@ -484,10 +488,12 @@ The `--uncited` flag does **not** appear in this table: uncited entries are advi
 
 ### Thread independence
 
-Every invocation uses a fresh `mcp__codex__codex` thread. Never
-`codex-reply`. Do not accept prior audit outputs (PROOF_AUDIT,
-PAPER_CLAIM_AUDIT, EXPERIMENT_LOG) as input — the fresh thread preserves
-reviewer independence per `shared-references/reviewer-independence.md`.
+Every invocation spawns a fresh paseo codex reviewer sub-agent per
+`shared-references/paseo-reviewer-dispatch.md`. Never continue a prior
+agent (no `send_agent_prompt` to a prior round's agent). Do not accept
+prior audit outputs (PROOF_AUDIT, PAPER_CLAIM_AUDIT, EXPERIMENT_LOG) as
+input — the fresh agent preserves reviewer independence per
+`shared-references/reviewer-independence.md`.
 
 This skill never blocks by itself; `paper-writing` Phase 6 plus the
 verifier decide whether the verdict blocks finalization based on the

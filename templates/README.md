@@ -12,6 +12,7 @@ Ready-to-use templates for each ARIS workflow. Copy, fill in your content, and r
 | [NARRATIVE_REPORT_TEMPLATE.md](NARRATIVE_REPORT_TEMPLATE.md) | Workflow 3 | Research narrative with claims, experiments, results |
 | [PAPER_PLAN_TEMPLATE.md](PAPER_PLAN_TEMPLATE.md) | Workflow 3 | Pre-made outline to skip planning phase |
 | [CLAUDE_MD_TEMPLATE.md](CLAUDE_MD_TEMPLATE.md) | All Workflows | Project dashboard with Pipeline Status — create once per project |
+| [CLAUDE_MD_PASEO_SECTION.md](CLAUDE_MD_PASEO_SECTION.md) | All Workflows | The `## ARIS Paseo` config block (paseo parent-child agent substrate) — paste into CLAUDE.md; optional, defaults if absent |
 | [MANIFEST_TEMPLATE.md](MANIFEST_TEMPLATE.md) | All Workflows | Output tracking manifest — auto-maintained by skills |
 
 ### Chinese Templates (中文模板)

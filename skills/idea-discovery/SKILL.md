@@ -2,8 +2,11 @@
 name: idea-discovery
 description: "Workflow 1: Full idea discovery pipeline to go from a broad research direction to validated, pilot-tested ideas. Use when user says \"找idea全流程\", \"idea discovery pipeline\", \"从零开始找方向\", or wants the complete idea exploration workflow."
 argument-hint: [research-direction]
-allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Skill, mcp__codex__codex, mcp__codex__codex-reply
+allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Skill, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable (paseo-subagent-dispatch.md §Auto-skip)
 ---
+
+> **Paseo substrate.** This workflow runs as a paseo claude sub-agent; its sub-skills dispatch as paseo sub-agents and its cross-model reviewer as a paseo codex sub-agent. See `shared-references/paseo-subagent-dispatch.md` + `paseo-reviewer-dispatch.md`. When paseo MCP is unavailable, fall back to in-process `Skill` + `mcp__codex__codex`.
 
 # Workflow 1: Idea Discovery Pipeline
 
@@ -17,6 +20,8 @@ This skill chains sub-skills into a single automated pipeline:
 /research-lit → /idea-creator → /novelty-check → /research-review → /research-refine-pipeline
   (survey)      (brainstorm)    (verify novel)    (critical feedback)  (refine method + plan experiments)
 ```
+
+> **Internal loop.** This pipeline runs as ONE paseo claude agent; any internal phase iteration (e.g. Phase 2 regeneration) loops internally per `paseo-subagent-dispatch.md`'s fence restatement — never re-entered from the top on a timer.
 
 Each phase builds on the previous one's output. The final deliverables are a validated `idea-stage/IDEA_REPORT.md` with ranked ideas, plus a refined proposal (`refine-logs/FINAL_PROPOSAL.md`) and experiment plan (`refine-logs/EXPERIMENT_PLAN.md`) for the top idea.
 
@@ -112,7 +117,7 @@ Phase 1 and Phase 2 will use `idea-stage/REF_PAPER_SUMMARY.md` as additional con
 
 ### Phase 1: Literature Survey
 
-Invoke `/research-lit` to map the research landscape. Idea discovery is exactly the place where Gemini's AI-driven broad coverage adds value, so include `gemini` as a source by default unless the user already specified an explicit `— sources:` directive in their idea-discovery invocation:
+Dispatch a paseo claude sub-agent for `/research-lit` (per `shared-references/paseo-subagent-dispatch.md`; in-process `Skill` fallback if paseo MCP unavailable) to map the research landscape. Idea discovery is exactly the place where Gemini's AI-driven broad coverage adds value, so include `gemini` as a source by default unless the user already specified an explicit `— sources:` directive in their idea-discovery invocation:
 
 ```
 # If $ARGUMENTS already contains "— sources:", pass through unchanged
@@ -145,11 +150,11 @@ Does this match your understanding? Should I adjust the scope before generating 
 ```
 
 - **User approves** (or no response + AUTO_PROCEED=true) → proceed to Phase 2 with best direction.
-- **User requests changes** (e.g., "focus more on X", "ignore Y", "too broad") → refine the search with updated queries, re-run `/research-lit` with adjusted scope, and present again. Repeat until the user is satisfied.
+- **User requests changes** (e.g., "focus more on X", "ignore Y", "too broad") → refine the search with updated queries, re-dispatch a paseo claude sub-agent for `/research-lit` with adjusted scope, and present again. Repeat until the user is satisfied.
 
 ### Phase 2: Idea Generation + Filtering + Pilots
 
-Invoke `/idea-creator` with the landscape context (and `idea-stage/REF_PAPER_SUMMARY.md` if available):
+Dispatch a paseo claude sub-agent for `/idea-creator` (per `shared-references/paseo-subagent-dispatch.md`; in-process `Skill` fallback if paseo MCP unavailable) with the landscape context (and `idea-stage/REF_PAPER_SUMMARY.md` if available):
 
 ```
 /idea-creator "$ARGUMENTS" — composed: idea-stage/IDEA_REPORT.md
@@ -161,7 +166,7 @@ Invoke `/idea-creator` with the landscape context (and `idea-stage/REF_PAPER_SUM
 - If `idea-stage/REF_PAPER_SUMMARY.md` exists, include it as context — ideas should build on, improve, or extend the reference paper
 - Brainstorm 8-12 concrete ideas via GPT-5.5 xhigh
 - Filter by feasibility, compute cost, quick novelty search
-- Deep validate top ideas (full novelty check + devil's advocate)
+- Deep validate top ideas (full novelty check + devil's advocate via a continued paseo codex reviewer sub-agent (`send_agent_prompt`) per `paseo-reviewer-dispatch.md`)
 - Run parallel pilot experiments on available GPUs (top 2-3 ideas)
 - Rank by empirical signal
 - Output `idea-stage/IDEA_REPORT.md`
@@ -192,7 +197,7 @@ Which ideas should I validate further? Or should I regenerate with different con
 
 ### Phase 3: Deep Novelty Verification
 
-For each top idea (positive pilot signal), run a thorough novelty check:
+For each top idea (positive pilot signal), dispatch a paseo claude sub-agent for `/novelty-check` (per `shared-references/paseo-subagent-dispatch.md`; in-process `Skill` fallback if paseo MCP unavailable) to run a thorough novelty check:
 
 ```
 /novelty-check "[top idea 1 description]"
@@ -201,7 +206,7 @@ For each top idea (positive pilot signal), run a thorough novelty check:
 
 **What this does:**
 - Multi-source literature search (arXiv, Scholar, Semantic Scholar)
-- Cross-verify with GPT-5.5 xhigh
+- Cross-verify via a fresh paseo codex reviewer sub-agent (per `shared-references/paseo-reviewer-dispatch.md`; GPT-5.5 xhigh)
 - Check for concurrent work (last 3-6 months)
 - Identify closest existing work and differentiation points
 
@@ -209,7 +214,7 @@ For each top idea (positive pilot signal), run a thorough novelty check:
 
 ### Phase 4: External Critical Review
 
-For the surviving top idea(s), get brutal feedback:
+For the surviving top idea(s), dispatch a paseo claude sub-agent for `/research-review` (per `shared-references/paseo-subagent-dispatch.md`; in-process `Skill` fallback if paseo MCP unavailable) to get brutal feedback:
 
 ```
 /research-review "[top idea with hypothesis + pilot results]" — composed: idea-stage/IDEA_REPORT.md
@@ -218,7 +223,7 @@ For the surviving top idea(s), get brutal feedback:
 In composed mode `/research-review` folds its conclusions into `idea-stage/IDEA_REPORT.md` and cites the `.aris/traces/…` path instead of writing a standalone review `.md` in the project root.
 
 **What this does:**
-- GPT-5.5 xhigh acts as a senior reviewer (NeurIPS/ICML level)
+- A fresh paseo codex reviewer sub-agent acts as a senior reviewer (NeurIPS/ICML level; per `shared-references/paseo-reviewer-dispatch.md`; GPT-5.5 xhigh)
 - Scores the idea, identifies weaknesses, suggests minimum viable improvements
 - Provides concrete feedback on experimental design
 
@@ -226,7 +231,7 @@ In composed mode `/research-review` folds its conclusions into `idea-stage/IDEA_
 
 ### Phase 4.5: Method Refinement + Experiment Planning
 
-After review, refine the top idea into a concrete proposal and plan experiments:
+After review, dispatch a paseo claude sub-agent for `/research-refine-pipeline` (per `shared-references/paseo-subagent-dispatch.md`; in-process `Skill` fallback if paseo MCP unavailable) to refine the top idea into a concrete proposal and plan experiments:
 
 ```
 /research-refine-pipeline "[top idea description + pilot results + reviewer feedback]"
@@ -234,7 +239,7 @@ After review, refine the top idea into a concrete proposal and plan experiments:
 
 **What this does:**
 - Freeze a **Problem Anchor** to prevent scope drift
-- Iteratively refine the method via GPT-5.5 review (up to 5 rounds, until score ≥ 9)
+- Iteratively refine the method via a fresh paseo codex reviewer sub-agent per round (per `shared-references/paseo-reviewer-dispatch.md`; GPT-5.5 xhigh; up to 5 rounds, until score ≥ 9)
 - Generate a claim-driven experiment roadmap with ablations, budgets, and run order
 - Output: `refine-logs/FINAL_PROPOSAL.md`, `refine-logs/EXPERIMENT_PLAN.md`, `refine-logs/EXPERIMENT_TRACKER.md`
 

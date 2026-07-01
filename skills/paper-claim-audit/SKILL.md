@@ -2,8 +2,11 @@
 name: paper-claim-audit
 description: "Zero-context verification that every number, comparison, and scope claim in the paper matches raw result files. Uses a fresh cross-model reviewer with NO prior context to prevent confirmation bias. Use when user says \"审查论文数据\", \"check paper claims\", \"verify numbers\", \"论文数字核对\", or before submission to ensure paper-to-evidence fidelity."
 argument-hint: [paper-directory]
-allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, mcp__codex__codex
+allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, Skill, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
 ---
+
+> **Paseo substrate.** This skill runs inside a paseo claude sub-agent; its cross-model claim reviewer is a paseo codex sub-agent (fresh). See `shared-references/paseo-reviewer-dispatch.md`. When paseo MCP is unavailable, fall back to `mcp__codex__codex`.
 
 # Paper Claim Audit: Zero-Context Evidence Verification
 
@@ -84,9 +87,9 @@ NARRATIVE_REPORT.md, PAPER_PLAN.md, findings.md
 Any .md file that is an executor-written summary
 ```
 
-### Step 2: Fresh Reviewer Audit (GPT-5.5 — NEW thread, no reply)
+### Step 2: Fresh Reviewer Audit (GPT-5.5 — fresh, no continuation)
 
-**CRITICAL: Use `mcp__codex__codex` (new thread), NEVER `mcp__codex__codex-reply`.** Every run must be a fresh context.
+Spawn a paseo codex reviewer sub-agent (fresh) per `shared-references/paseo-reviewer-dispatch.md`. Every run is a fresh context — never continue an existing codex agent (no `send_agent_prompt` to a prior reviewer). The `mcp__codex__codex:` block below is the documented fallback, used verbatim when paseo MCP is unavailable:
 
 ```
 mcp__codex__codex:
@@ -266,7 +269,7 @@ Skip if `RENDER_HTML = false` is set in the project's `CLAUDE.md` or passed as `
 
 ## Review Tracing
 
-After each `mcp__codex__codex` or `mcp__codex__codex-reply` reviewer call, save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).
+After each paseo codex reviewer sub-agent call (fresh `create_agent`, or `send_agent_prompt` continuation), save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).
 
 ## Submission Artifact Emission
 
@@ -333,8 +336,8 @@ external `results/` dirs. The verifier resolves relative entries via
 
 ### Thread independence
 
-Every invocation uses a fresh `mcp__codex__codex` thread. Never
-`codex-reply`. Do not accept prior audit outputs (PROOF_AUDIT, CITATION_AUDIT,
+Every invocation spawns a fresh paseo codex reviewer sub-agent (`create_agent`). Never
+continued (`send_agent_prompt` / the `codex-reply` analog). Do not accept prior audit outputs (PROOF_AUDIT, CITATION_AUDIT,
 EXPERIMENT_LOG, AUTO_REVIEW summaries) as input to this audit — the fresh
 thread preserves reviewer independence per
 `shared-references/reviewer-independence.md`.

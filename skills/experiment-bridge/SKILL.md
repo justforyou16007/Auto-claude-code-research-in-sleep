@@ -2,8 +2,11 @@
 name: experiment-bridge
 description: "Workflow 1.5: Bridge between idea discovery and auto review. Reads EXPERIMENT_PLAN.md, implements experiment code, deploys to GPU, collects initial results. Use when user says \"实现实验\", \"implement experiments\", \"bridge\", \"从计划到跑实验\", \"deploy the plan\", or has an experiment plan ready to execute."
 argument-hint: [experiment-plan-path-or-topic]
-allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, Skill, mcp__codex__codex, mcp__codex__codex-reply
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
+allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, Skill, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent
 ---
+
+> **Paseo substrate.** This workflow runs as a paseo claude sub-agent; its sub-skills dispatch as paseo sub-agents and its cross-model code reviewer as a paseo codex sub-agent. See `shared-references/paseo-subagent-dispatch.md` + `paseo-reviewer-dispatch.md`. When paseo MCP is unavailable, fall back to in-process `Skill` + `mcp__codex__codex`.
 
 # Workflow 1.5: Experiment Bridge
 
@@ -106,12 +109,18 @@ For each milestone (in order), write the experiment scripts:
 
 **Skip this step if `CODE_REVIEW` is `false`.**
 
-Before deploying, send the experiment code to GPT-5.5 xhigh for review:
+Before deploying, spawn a paseo codex reviewer sub-agent (fresh) per `shared-references/paseo-reviewer-dispatch.md` (GPT-5.5, xhigh) to review the experiment code:
 
 ```
-mcp__codex__codex:
-  config: {"model_reasoning_effort": "xhigh"}
-  prompt: |
+mcp__paseo__create_agent:
+  relationship: {kind: "subagent"}            # cascade-archive with the parent
+  workspace:    {kind: "current"}             # reviewer reads the same artifacts
+  title:        "experiment-bridge code-review round 1 :: <run_id>"
+  provider:     "codex/gpt-5.5"
+  settings:
+    modeId:           "full-access"           # MANDATORY for cross-provider
+    thinkingOptionId: "xhigh"
+  initialPrompt: |
     Review the following experiment implementation for correctness.
 
     ## Experiment Plan:
@@ -132,6 +141,7 @@ mcp__codex__codex:
     6. Any potential issues (OOM risk, numerical instability, missing seeds)?
 
     For each issue found, specify: CRITICAL / MAJOR / MINOR and the exact fix.
+  notifyOnFinish: true
 ```
 
 **On review results:**
@@ -141,7 +151,7 @@ mcp__codex__codex:
 
 ### Phase 3: Sanity Check (if SANITY_FIRST = true)
 
-Before deploying the full experiment suite, run the sanity-stage experiment:
+Before deploying the full experiment suite, run the sanity-stage experiment — dispatch a paseo claude sub-agent for `/run-experiment` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable):
 
 ```
 /run-experiment [sanity experiment command]
@@ -164,7 +174,7 @@ If sanity fails → **auto-debug before giving up** (max 3 attempts):
    - NaN/divergence → reduce learning rate, check data preprocessing
 3. **Fix and re-run** — apply the fix, re-run sanity
 4. **Attempt 2+ still failing? → Call in Codex rescue** (if Codex plugin installed):
-   Before the next retry, invoke `/codex:rescue` to get a second opinion on the root cause. Codex independently reads the code and error logs — it may spot issues Claude missed (wrong tensor shapes, subtle import shadowing, config mismatches, etc.). Apply its suggested fix, then re-run.
+   Before the next retry, dispatch a paseo claude sub-agent for `/codex:rescue` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to get a second opinion on the root cause. The rescue sub-agent is a claude child that may itself spawn a codex reviewer; it independently reads the code and error logs — it may spot issues Claude missed (wrong tensor shapes, subtle import shadowing, config mismatches, etc.). Apply its suggested fix, then re-run.
    - If `/codex:rescue` is not available (plugin not installed), continue with Claude's own diagnosis
 5. **Still failing after 3 attempts?** → stop, report the failure with all attempted fixes and error logs. Do not proceed with broken code.
 
@@ -174,12 +184,12 @@ If sanity fails → **auto-debug before giving up** (max 3 attempts):
 
 Deploy experiments following the plan's milestone order. **Route by job count**:
 
-**Small batch (≤5 jobs per milestone)** → use `/run-experiment` directly:
+**Small batch (≤5 jobs per milestone)** → dispatch a paseo claude sub-agent for `/run-experiment` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable):
 ```
 /run-experiment [experiment commands]
 ```
 
-**Large batch (≥10 jobs, multi-seed sweeps, or phase dependencies)** → use `/experiment-queue` for proper orchestration:
+**Large batch (≥10 jobs, multi-seed sweeps, or phase dependencies)** → dispatch a paseo claude sub-agent for `/experiment-queue` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) for proper orchestration:
 ```
 /experiment-queue [grid spec or manifest]
 ```
@@ -190,7 +200,7 @@ Auto-routing rule: if any milestone in `EXPERIMENT_PLAN.md` declares ≥10 jobs 
 
 For each milestone:
 1. Deploy experiments in parallel (up to MAX_PARALLEL_RUNS for `/run-experiment`, or `max_parallel` from manifest for `/experiment-queue`)
-2. Use `/monitor-experiment` to track progress (reads from queue_state.json if `/experiment-queue` is active)
+2. Dispatch a paseo claude sub-agent for `/monitor-experiment` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to track progress (reads from queue_state.json if `/experiment-queue` is active)
 3. Collect results as experiments complete
 
 **🚦 Checkpoint (if AUTO_DEPLOY = false):**
@@ -213,7 +223,7 @@ Deploy now? Or review the code first?
 As experiments complete:
 
 1. **Parse output files** (JSON/CSV/logs) for key metrics
-2. **Training quality check** — if W&B data is available (CLAUDE.md has `wandb: true` and `wandb_project`), invoke `/training-check` to detect NaN, loss divergence, plateaus, or overfitting. If W&B is not configured, skip silently.
+2. **Training quality check** — if W&B data is available (CLAUDE.md has `wandb: true` and `wandb_project`), dispatch a paseo claude sub-agent for `/training-check` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to detect NaN, loss divergence, plateaus, or overfitting. If W&B is not configured, skip silently.
 3. **Update `refine-logs/EXPERIMENT_TRACKER.md`** — fill in Status and Notes columns
 4. **Check success criteria** from EXPERIMENT_PLAN.md — did each experiment meet its bar?
 4. **Write initial results summary:**
@@ -270,7 +280,7 @@ This structured log survives session recovery — downstream skills read it inst
 
 ### Phase 5.6: Auto Ablation Planning
 
-After main experiments (M2) complete with positive results, invoke `/ablation-planner` to design ablation studies:
+After main experiments (M2) complete with positive results, dispatch a paseo claude sub-agent for `/ablation-planner` per `shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback if paseo MCP unavailable) to design ablation studies:
 
 - Read the main results and method description
 - Generate a claim-driven ablation plan: which components to remove, what to compare, expected outcomes

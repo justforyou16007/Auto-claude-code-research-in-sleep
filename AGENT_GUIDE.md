@@ -2,7 +2,17 @@
 
 > **For AI agents reading this repo cold.** If you are a human, see [README.md](README.md) or [docs/ARIS_INTRO.html](https://wanshuiyin.github.io/Auto-claude-code-research-in-sleep/ARIS_INTRO.html).
 
-ARIS is a research harness: composable Markdown skills that orchestrate the ML research lifecycle through cross-model adversarial collaboration. Executor (Claude / Codex / Cursor / Antigravity / Copilot CLI) writes code & papers; reviewer (GPT-5.5 via Codex MCP, or Claude / Gemini via `claude-review` / `gemini-review` MCP) critiques in fresh threads.
+ARIS is a research harness: composable Markdown skills that orchestrate the ML research lifecycle through cross-model adversarial collaboration. Executor (Claude / Codex / Cursor / Antigravity / Copilot CLI) writes code & papers; reviewer (GPT-5.5 via a paseo codex sub-agent — or Codex MCP as the documented fallback — or Claude / Gemini via `claude-review` / `gemini-review` MCP) critiques in fresh threads.
+
+> **Paseo substrate.** W1–W6 + their sub-skills run as **paseo parent-child agents**
+> (executor = claude), and each cross-model reviewer runs as a **paseo codex
+> sub-agent** (GPT-5.5), all driven by `/research-pipeline`. The codex-MCP path
+> (`mcp__codex__codex` / `codex-reply`) remains as the graceful-degradation
+> fallback when the paseo MCP server is unavailable. The verdict, audit chain,
+> acceptance gate, and helpers are identical on either path. See
+> [`docs/PASEO_MIGRATION.md`](docs/PASEO_MIGRATION.md) +
+> [`skills/shared-references/paseo-subagent-dispatch.md`](skills/shared-references/paseo-subagent-dispatch.md)
+> + [`paseo-reviewer-dispatch.md`](skills/shared-references/paseo-reviewer-dispatch.md).
 
 > **Source of Truth.** This file is a *routing index*, not a specification.
 > Behavior of a skill lives in `skills/<name>/SKILL.md`. System-wide
@@ -91,7 +101,7 @@ Hard constraints on W5: no new experiments, no bib edits, no framework changes, 
 
 ## Assurance & Audit Chain
 
-ARIS gates submission via a 5-layer cross-model audit chain. Each layer is invoked by a different skill, all use **fresh codex threads** (never `codex-reply`):
+ARIS gates submission via a 5-layer cross-model audit chain. Each layer is invoked by a different skill, all use **fresh codex reviewer sub-agents** (paseo; or fresh `mcp__codex__codex` threads as fallback — never `codex-reply` for these audits):
 
 | Layer | Skill | Asks | Verdict file |
 |:----:|-------|------|--------------|
@@ -169,7 +179,7 @@ Advisory CI lint at `.github/workflows/lint-skills-helpers.yml` flags hardcoded 
 - **Reviewer** (GPT-5.5 via Codex MCP, default; or Claude / Gemini via `*-review` MCP overlays): critiques, scores, demands revisions
 - **Rule**: executor and reviewer **must** be different model families. Same-family review is a non-feature.
 - **Reviewer independence**: pass file paths only, never summaries or interpretations
-- **Thread freshness**: every reviewer call uses `mcp__codex__codex` (or equivalent), **never** `codex-reply` — narrative accumulation inflates scores
+- **Thread freshness**: every fresh-context review spawns a **new paseo codex reviewer sub-agent** (`create_agent`) — never continues a prior agent for a fresh review, since narrative accumulation inflates scores. The **continuation** case (`send_agent_prompt` to the same agent — the `codex-reply` analog) is reserved for multi-round reviewer-memory loops (`/auto-review-loop` round 2+) where the reviewer checks resolution against its OWN prior critique. See [`paseo-reviewer-dispatch.md`](skills/shared-references/paseo-reviewer-dispatch.md).
 - **Experiment integrity**: executor must NOT judge its own eval code — reviewer audits directly per [`shared-references/experiment-integrity.md`](skills/shared-references/experiment-integrity.md)
 
 Default reviewer model is `gpt-5.5` (runtime since 2026-04-24; docs aligned 2026-05-14). Legacy `gpt-5.4` available as `--- reviewer-model: gpt-5.4`. Oracle Pro tier (`gpt-5.5-pro`) via `--- reviewer: oracle-pro` is a separate routing path.
@@ -180,6 +190,8 @@ Read these before invoking review-related or audit-class skills:
 
 | File | When you need it |
 |------|------------------|
+| [`paseo-subagent-dispatch.md`](skills/shared-references/paseo-subagent-dispatch.md) | Dispatching an executor sub-agent (claude parent → claude child) on the paseo substrate |
+| [`paseo-reviewer-dispatch.md`](skills/shared-references/paseo-reviewer-dispatch.md) | Spawning/continuing a codex reviewer sub-agent (claude parent → codex child); the fresh-vs-continuation rule + REVIEWER_BIAS_GUARD |
 | [`reviewer-independence.md`](skills/shared-references/reviewer-independence.md) | Any cross-model review |
 | [`experiment-integrity.md`](skills/shared-references/experiment-integrity.md) | Writing eval / audit code |
 | [`fan-out-pattern.md`](skills/shared-references/fan-out-pattern.md) | Fanning out subagents for breadth (any runtime tier) |

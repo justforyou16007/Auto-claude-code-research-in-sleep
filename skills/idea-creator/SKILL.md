@@ -2,8 +2,11 @@
 name: idea-creator
 description: Generate and rank research ideas given a broad direction. Use when user says "找idea", "brainstorm ideas", "generate research ideas", "what can we work on", or wants to explore a research area for publishable directions.
 argument-hint: [research-direction]
-allowed-tools: Bash(*), Read, Write, Grep, Glob, WebSearch, WebFetch, Agent, Skill, mcp__codex__codex, mcp__codex__codex-reply, mcp__manual_review__review, mcp__manual_review__review_reply
+allowed-tools: Bash(*), Read, Write, Grep, Glob, WebSearch, WebFetch, Agent, Skill, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent, mcp__manual_review__review, mcp__manual_review__review_reply
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
 ---
+
+> **Paseo substrate.** This skill runs inside a paseo claude sub-agent; its lens fan-out dispatches as paseo sub-agents and its Phase-4 devil's-advocate reviewer is a paseo codex sub-agent (fresh first pass, continued triage). See `shared-references/paseo-subagent-dispatch.md` + `paseo-reviewer-dispatch.md` + `fan-out-pattern.md`. When paseo MCP is unavailable, fall back to `mcp__codex__codex`.
 
 # Research Idea Creator
 
@@ -30,8 +33,8 @@ Given a broad research direction from the user, systematically generate, validat
 When calling the reviewer for idea evaluation, branch on REVIEWER_BACKEND:
 
 **If REVIEWER_BACKEND = `codex`:**
-  Use `mcp__codex__codex` for new review threads.
-  Use `mcp__codex__codex-reply` for follow-up rounds (reuse threadId).
+  Spawn a paseo codex reviewer sub-agent (fresh) per `shared-references/paseo-reviewer-dispatch.md` for new review threads (`mcp__paseo__create_agent`).
+  Continue the same paseo codex reviewer sub-agent (`mcp__paseo__send_agent_prompt`) per `paseo-reviewer-dispatch.md` for follow-up rounds (reuse the agent-id as threadId).
 
 **If REVIEWER_BACKEND = `manual`:**
   Use `mcp__manual_review__review` for new review threads with:
@@ -167,9 +170,13 @@ the candidate set that enters Phase 3.
 
 Use the selected reviewer backend (see Reviewer Calling Convention) for divergent thinking.
 
-For the `codex` backend, **do not inline the full landscape + gaps prompt**
-once it stops being tiny. Write the full brainstorming request to
-`idea-stage/codex_brainstorm_bundle.md`, then keep the MCP prompt short:
+For the `codex` backend, spawn a paseo codex reviewer sub-agent (fresh) per
+`shared-references/paseo-reviewer-dispatch.md` (the first pass — it
+establishes the reviewer thread Phase 4's triage continues). **Do not inline
+the full landscape + gaps prompt** once it stops being tiny. Write the full
+brainstorming request to `idea-stage/codex_brainstorm_bundle.md`, then keep
+the prompt short (the `mcp__codex__codex:` block below is the documented
+fallback when paseo MCP is unavailable):
 
 ```
 mcp__codex__codex:
@@ -264,7 +271,9 @@ per-idea novelty search:
 
 1. **Cross-model triage (devil's advocate) — ranks ALL candidates first.**
    Use the selected reviewer backend (see Reviewer Calling Convention). For
-   `codex`, use `mcp__codex__codex-reply` (same thread). For `manual`, use
+   `codex`, continue the same paseo codex reviewer sub-agent
+   (`mcp__paseo__send_agent_prompt`) per `paseo-reviewer-dispatch.md` (same
+   threadId — devil's-advocate memory). For `manual`, use
    `mcp__manual_review__review_reply` with the saved threadId. For the
    `codex` backend, write the full annotated candidate set to
    `idea-stage/codex_triage_bundle.md` and send only a path-based follow-up:
@@ -467,4 +476,4 @@ implement                     → write code
 
 ## Review Tracing
 
-After each reviewer call (`mcp__codex__codex`, `mcp__codex__codex-reply`, `mcp__manual_review__review`, or `mcp__manual_review__review_reply`), save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).
+After each reviewer call (`mcp__paseo__create_agent`, `mcp__paseo__send_agent_prompt`, `mcp__manual_review__review`, or `mcp__manual_review__review_reply`), save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).

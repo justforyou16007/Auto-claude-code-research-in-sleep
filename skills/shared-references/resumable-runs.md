@@ -89,6 +89,34 @@ python3 tools/run_state.py status <root> <run_id>
 4. **Resume** therefore re-runs `running`/`failed` phases and **re-audits**
    `done`-but-unaccepted phases, and skips only terminal (`accepted`/`skipped`) ones.
 
+### Paseo driver note (re-attach vs recreate)
+
+When the workflow runs on the paseo substrate (per
+`paseo-subagent-dispatch.md`), each phase's W-agent (and, for verdict phases,
+its codex reviewer) is a paseo agent with its own `agentId`. Resume therefore
+has one extra decision per phase — **is the phase's agent still alive?**
+
+- `mcp__paseo__list_agents` / `get_agent_status` — is the W-agent (or its
+  reviewer) `running` / `idle`?
+  - **Alive** → **re-attach**: await its `notifyOnFinish` (do NOT
+    `send_agent_prompt` to a running verdict agent — the fence in
+    `external-cadence.md` interrupts it via `replaceRunning`). The agent
+    completes its in-flight round and notifies; the orchestrator then reads
+    the receipt and runs the gate.
+  - **Dead / archived** → `create_agent` fresh. The W-agent's startup reads
+    `REVIEW_STATE.json` / `PAPER_IMPROVEMENT_STATE.json` and resumes from saved
+    round+1, recreating the codex reviewer by its persisted agent-id
+    (`threadId` field — now holds a paseo codex agent-id) if still alive
+    (continuation preserved), else a fresh codex agent (reviewer memory may be
+    lost — same risk as today's codex-server-restart; trace files survive).
+
+The `verdict_id` durable handle recorded at `accept` is now the paseo codex
+agent-id (for codex-accepted phases) or the verifier-report path/sha (for
+deterministic phases) — both already fit the "durable handle string" contract,
+so `run_state.py` is unchanged. Resume resolves the agent-id the same way it
+resolved the codex thread id: it is an opaque string on disk; live-ness is the
+only new question, answered by `list_agents`.
+
 ## Cross-references
 - `acceptance-gate.md` — the source rule (`done` = execution-completeness, safe
   same-model; `accepted` = quality/correctness, must be cross-model or

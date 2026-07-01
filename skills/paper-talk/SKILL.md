@@ -2,8 +2,11 @@
 name: paper-talk
 description: "End-to-end conference talk pipeline: paper → slide outline → Beamer + PPTX → per-page polish → assurance checks (claim / citation / anonymity) → final export and report. Default-good for academic conference talks (NeurIPS / ICML / ICLR / VALSE / 投稿 talks). Trigger phrases: \"做 talk\", \"做 PPT 全流程\", \"talk pipeline\", \"end-to-end slides\", \"做演讲\", \"conference talk full workflow\". Use when the user wants the complete talk artifact, not just a slide deck."
 argument-hint: "[paper-dir] [— talk_type: oral | spotlight | poster-talk | invited] [— minutes: N] [— assurance: draft | polished | conference-ready] [— reference: <pdf>] [— style: generic | why-rf | <venue>] [— style-ref: <paper-source>] [— effort: lite | balanced | max | beast] [— anonymous]"
-allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, Skill, mcp__codex__codex
+allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, Skill, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
 ---
+
+> **Paseo substrate.** This workflow runs as a paseo claude sub-agent; its sub-skills dispatch as paseo sub-agents and any cross-model reviewer as a paseo codex sub-agent. See `shared-references/paseo-subagent-dispatch.md` + `paseo-reviewer-dispatch.md`. When paseo MCP is unavailable, fall back to in-process `Skill` + `mcp__codex__codex`.
 
 # Paper Talk: End-to-End Conference Talk Pipeline
 
@@ -131,8 +134,10 @@ count, time budget, claim-per-slide map) to the user and ask:
 
 > "Use existing outline (Y/n)? Modify? Regenerate?"
 
-Otherwise, delegate to `/paper-slides` Phase-1 only (content extraction +
-slide outline generation). `/paper-slides` writes the outline into its own
+Otherwise, dispatch a paseo claude sub-agent for `/paper-slides` Phase-1
+only (content extraction + slide outline generation) per
+`shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback
+if paseo MCP unavailable). `/paper-slides` writes the outline into its own
 state; we adopt it as `slides/SLIDE_OUTLINE.md`.
 
 The outline must contain, per slide:
@@ -151,7 +156,9 @@ running unattended.
 
 ### Phase 2: Build Baseline Deck
 
-Invoke `/paper-slides` to generate Beamer source + PPTX from the approved
+Dispatch a paseo claude sub-agent for `/paper-slides` per
+`shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback
+if paseo MCP unavailable) to generate Beamer source + PPTX from the approved
 outline.
 
 ```
@@ -176,7 +183,9 @@ exact paths.
 
 Skip when `assurance == draft`.
 
-Invoke `/slides-polish` against the freshly generated PPTX, with a
+Dispatch a paseo claude sub-agent for `/slides-polish` per
+`shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback
+if paseo MCP unavailable) against the freshly generated PPTX, with a
 reference. If the user passed `— reference:`, use that. Otherwise, use the
 Beamer compile (`slides/main.pdf`) as the visual reference — the Beamer is
 the design intent for the same talk, so it is the correct anchor when no
@@ -237,7 +246,9 @@ in Phase 6 unless the user passes `— keep-audit-input`.
 
 #### 4.1 Slide claim audit
 
-Invoke `/paper-claim-audit` against the staged input. Scope is **slide
+Dispatch a paseo claude sub-agent for `/paper-claim-audit` per
+`shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback
+if paseo MCP unavailable) against the staged input. Scope is **slide
 text + speaker notes + full talk script** — talks often smuggle
 unsupported claims into spoken parts that the visible bullets don't show.
 
@@ -255,7 +266,9 @@ verdict from `conference-ready` to `polished`.
 
 #### 4.2 Citation audit
 
-Invoke `/citation-audit` over the staged input. Verify any `\cite{...}` in
+Dispatch a paseo claude sub-agent for `/citation-audit` per
+`shared-references/paseo-subagent-dispatch.md` (in-process `Skill` fallback
+if paseo MCP unavailable) over the staged input. Verify any `\cite{...}` in
 slides + notes + script via DBLP / CrossRef; flag fabricated entries.
 
 ```

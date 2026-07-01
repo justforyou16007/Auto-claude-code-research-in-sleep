@@ -9,9 +9,19 @@ Save full prompt/response pairs for every cross-model reviewer call, enabling:
 
 ## When to Trace
 
-After **every** `mcp__codex__codex` or `mcp__codex__codex-reply` call that serves a reviewer/critique function. This includes review scoring, experiment auditing, claim verification, idea critique, and patch gating.
+After **every** cross-model reviewer call that serves a reviewer/critique function — whether the reviewer is a **paseo codex sub-agent** (`create_agent` fresh / `send_agent_prompt` continuation, per [`paseo-reviewer-dispatch.md`](paseo-reviewer-dispatch.md)) or the `mcp__codex__codex` / `mcp__codex__codex-reply` fallback. This includes review scoring, experiment auditing, claim verification, idea critique, and patch gating.
 
 Do NOT trace: purely informational LLM calls (e.g., `codex exec` for code generation that is not a review).
+
+> **Paseo note (`save_trace.sh` itself is unchanged).** On the paseo substrate,
+> `--thread-id` holds the **paseo codex agent-id** (returned by `create_agent`
+> or read from `REVIEW_STATE.json`'s `threadId` field, which now holds an
+> agent-id). The trace's `request.json` `tool` field is `paseo:create_agent`
+> (fresh) or `paseo:send_agent_prompt` (continuation) instead of
+> `mcp__codex__codex` / `mcp__codex__codex-reply`. `save_trace.sh` treats
+> `--thread-id` as an opaque string, so the helper needs no change; only the
+> value's meaning shifts from a codex-MCP thread id to a paseo codex agent-id
+> (both are durable handles to the reviewer's conversation thread).
 
 ## Trace Directory
 

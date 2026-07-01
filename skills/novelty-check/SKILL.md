@@ -2,8 +2,11 @@
 name: novelty-check
 description: Verify research idea novelty against recent literature. Use when user says "查新", "novelty check", "有没有人做过", "check novelty", or wants to verify a research idea is novel before implementing.
 argument-hint: [method-or-idea-description]
-allowed-tools: WebSearch, WebFetch, Grep, Read, Glob, mcp__codex__codex
+allowed-tools: Skill, WebSearch, WebFetch, Grep, Read, Glob, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent
+# mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
 ---
+
+> **Paseo substrate.** This skill runs inside a paseo claude sub-agent; its cross-model novelty reviewer is a paseo codex sub-agent (fresh). See `shared-references/paseo-reviewer-dispatch.md`. When paseo MCP is unavailable, fall back to `mcp__codex__codex`.
 
 # Novelty Check Skill
 
@@ -41,12 +44,12 @@ For EACH core claim, search using ALL available sources:
 3. **Read abstracts**: For each potentially overlapping paper, WebFetch its abstract and related work section
 
 ### Phase C: Cross-Model Verification
-Call REVIEWER_MODEL via Codex MCP (`mcp__codex__codex`) with xhigh reasoning.
+Spawn a paseo codex reviewer sub-agent (fresh) per `shared-references/paseo-reviewer-dispatch.md` with xhigh reasoning.
 When the method description plus the Phase-B paper list is more than a short
-note, avoid pasting it inline into the MCP prompt. Write a dossier file such as
+note, avoid pasting it inline into the reviewer prompt. Write a dossier file such as
 `NOVELTY_DOSSIER.md` (or a project-local equivalent) containing the method
 description, core claims, candidate papers, and the exact questions below, then
-send only the file path:
+send only the file path. When paseo MCP is unavailable, fall back to `mcp__codex__codex`:
 ```
 mcp__codex__codex:
   config: {"model_reasoning_effort": "xhigh"}
@@ -97,4 +100,4 @@ Output a structured report:
 
 ## Review Tracing
 
-After each `mcp__codex__codex` or `mcp__codex__codex-reply` reviewer call, save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`).
+After each paseo codex reviewer call (`mcp__codex__codex`/`codex-reply` as fallback), save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip). Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/<skill>/<date>_run<NN>/`. Respect the `--- trace:` parameter (default: `full`). `save_trace.sh --thread-id` passes a paseo codex agent-id; the helper is unchanged.

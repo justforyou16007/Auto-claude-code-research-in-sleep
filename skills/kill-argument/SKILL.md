@@ -2,8 +2,10 @@
 name: kill-argument
 description: "Two-thread adversarial review: a fresh reviewer constructs the strongest 200-word rejection memo, then a second fresh reviewer defends the paper point-by-point and surfaces still-unresolved critical issues. Use when user says \"kill argument\", \"adversarial review\", \"hostile review\", \"rebuttal preparation\", \"reviewer-2 simulation\", or before submitting a theory paper that has already passed standard review rounds."
 argument-hint: [paper-directory]
-allowed-tools: Bash(*), Read, Write, Edit, Grep, Glob, mcp__codex__codex
+allowed-tools: Skill, Bash(*), Read, Write, Edit, Grep, Glob, mcp__paseo__create_agent, mcp__paseo__send_agent_prompt, mcp__paseo__list_pending_permissions, mcp__paseo__respond_to_permission, mcp__paseo__wait_for_agent, mcp__paseo__list_agents, mcp__paseo__get_agent_status, mcp__paseo__archive_agent # mcp__codex__codex retained only as documented fallback when paseo MCP unavailable
 ---
+
+> **Paseo substrate.** This skill runs inside a paseo claude sub-agent; its 2-thread Attack-Adjudication uses two FRESH paseo codex reviewer sub-agents (no continuation between them). See `shared-references/paseo-reviewer-dispatch.md` + `fan-out-pattern.md`. When paseo MCP is unavailable, fall back to `mcp__codex__codex`.
 
 # Kill Argument Exercise: Adversarial Attack-Defense Review
 
@@ -52,7 +54,7 @@ This skill is most valuable for **theory papers** with ≥5 theorem-class enviro
 ## Constants
 
 - **REVIEWER_MODEL** = `gpt-5.5` (default; specify `gpt-5.4` if you want to fall back to the legacy default).  Reviewer reasoning effort = `xhigh`.
-- **CONTEXT_POLICY** = `fresh` (REVIEWER_BIAS_GUARD).  Each thread is a fresh `mcp__codex__codex` call.  **Never** use `mcp__codex__codex-reply`.  No prior review summary, fix list, or executor explanation enters either prompt.
+- **CONTEXT_POLICY** = `fresh` (REVIEWER_BIAS_GUARD).  Each thread spawns a **fresh paseo codex reviewer sub-agent** (`create_agent`).  **Never** continue a prior reviewer agent (`send_agent_prompt` / the `codex-reply` analog).  No prior review summary, fix list, or executor explanation enters either prompt.
 - **ATTACK_LENGTH** = approximately 200 words (do not exceed 250).  Single coherent argument, not a list.
 - **DEFENSE_DECOMPOSITION** = 3-7 atomic rejection points extracted from the attack memo.  Each gets its own classification.
 - **CLASSIFICATION** = `answered_by_current_text` / `partially_answered` / `still_unresolved`.  (Names chosen so the adjudicator does not assume "fixed" implies prior history of patching — they read the paper as a fresh reviewer would.)
@@ -84,7 +86,7 @@ If a compiled PDF is missing, the skill should still run on .tex source alone, b
 
 ### Step 2: Attack memo (Thread 1, fresh codex)
 
-Invoke `mcp__codex__codex` (NOT `codex-reply`) with the following prompt structure:
+Spawn a paseo codex reviewer sub-agent (FRESH — no continuation between Thread 1 and Thread 2) per `shared-references/paseo-reviewer-dispatch.md`. The `mcp__codex__codex:` block below is the documented fallback when paseo MCP is unavailable:
 
 ```
 mcp__codex__codex:
@@ -161,9 +163,9 @@ without diluting the commitment:
    each asked for the strongest ~120-word thrust *on that axis alone*. These
    are evidence-gathering, not the verdict.
    - **These are NOT Claude subagents, and there is deliberately NO `Agent`
-     grant.** Each probe is a fresh `mcp__codex__codex` call — the adversary
-     must be cross-model (non-Claude). Codex MCP is **serial** (concurrent
-     codex calls hang), so the probes run **sequentially** — Tier-3 in the
+     grant.** Each probe spawns a fresh paseo codex reviewer sub-agent — the adversary
+     must be cross-model (non-Claude). Codex is **serial** (concurrent
+     codex agents hang), so the probes run **sequentially** — Tier-3 in the
      fan-out ladder. This is exactly why `kill-argument` lists no `Agent` in
      `allowed-tools`: it spawns nothing; it threads codex calls.
 2. **Commit (the verdict, still single).** A final fresh-codex synthesis reads
@@ -182,7 +184,7 @@ ids. The committed attack memo, not the six probes, is what Step 3 consumes.
 
 ### Step 3: Adjudication memo (Thread 2, fresh codex with attack + paper)
 
-Invoke a second `mcp__codex__codex` call (still NOT `codex-reply` — Thread 2 is independent of Thread 1's codex history):
+Spawn a second paseo codex reviewer sub-agent (FRESH — no continuation between Thread 1 and Thread 2; Thread 2 is a NEW fresh agent, NOT a `send_agent_prompt` continuation of Thread 1 — the independence is the point), per `shared-references/paseo-reviewer-dispatch.md`. The `mcp__codex__codex:` block below is the documented fallback when paseo MCP is unavailable:
 
 ```
 mcp__codex__codex:
@@ -410,7 +412,7 @@ To the user:
 
 ## Key Rules
 
-- **Fresh thread per call.**  Both Attack and Adjudication use `mcp__codex__codex`, never `codex-reply`.  Thread 1 and Thread 2 must not share codex context.
+- **Fresh thread per call.**  Both Attack and Adjudication spawn a **fresh paseo codex reviewer sub-agent** (`create_agent`), never continued (`send_agent_prompt` / the `codex-reply` analog).  Thread 1 and Thread 2 must not share codex context.
 - **Zero prior context.**  Neither thread receives prior round reviews, fix lists, executor summaries, or improvement-loop logs.
 - **Attack must commit.**  Single argument, ~200 words.  No "consider also" hedge.  The whole value is in forcing the reviewer to pick the most damaging line.
 - **Adjudicator must classify, not minimize.**  `still_unresolved` is honest if the paper has no effective response.  Don't downgrade to `partially_answered` unless evidence is real.
@@ -427,7 +429,7 @@ To the user:
 
 ## Review Tracing
 
-After each `mcp__codex__codex` reviewer call, save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip).  Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/kill-argument/<date>_run<NN>/`.  Both threads' raw responses should be preserved.
+After each paseo codex reviewer sub-agent call (fresh `create_agent`, or `send_agent_prompt` continuation), save the trace following `shared-references/review-tracing.md` (Policy C — forensic; never silently skip).  Use `save_trace.sh` (resolved per the chain in `shared-references/integration-contract.md` §2) or write files directly to `.aris/traces/kill-argument/<date>_run<NN>/`.  Both threads' raw responses should be preserved.
 
 ## Notes
 

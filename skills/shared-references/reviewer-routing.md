@@ -2,9 +2,45 @@
 
 ## Default (NEVER changes without explicit user request)
 
-All review calls use **Codex MCP** (`mcp__codex__codex`, default model `gpt-5.5`) with `reasoning_effort: xhigh`.
+All review calls use the **codex** reviewer (model `gpt-5.5`,
+`reasoning_effort: xhigh`). The **default backend** is now a **paseo codex
+sub-agent** (per [`paseo-reviewer-dispatch.md`](paseo-reviewer-dispatch.md)) —
+the cross-model reviewer is a real paseo agent, not an `mcp__codex__codex` MCP
+tool call. `mcp__codex__codex` / `mcp__codex__codex-reply` remain as the
+documented fallback when the paseo MCP server is unavailable.
 
 This is the default for ALL skills. No parameter, no config, no effort level changes this.
+
+### Paseo codex agent backend (default)
+
+The codex reviewer is spawned by the Claude executor (a workflow agent or a
+leaf verdict skill running inside one) as a paseo sub-agent:
+
+- **Provider:** `codex/gpt-5.5` (cross-provider from the Claude executor —
+  the cross-model invariant, `reviewer-independence.md`).
+- **Mode:** `full-access` (default — autonomous repo read, network on, the
+  `codex exec` analog) per `paseo-reviewer-dispatch.md`. `read-only` cannot
+  write the verdict file; `auto-review` is Codex's *internal* guardian, not
+  our reviewer — do not confuse the names.
+- **Thinking:** `settings.thinkingOptionId: "xhigh"` (verify the exact id for
+  `gpt-5.5` via `mcp__paseo__list_models` / `inspect_provider`).
+- **Continuity:** `create_agent` = fresh review (REVIEWER_BIAS_GUARD); `send_agent_prompt`
+  to the same agent = continuation (reviewer memory, the `codex-reply` analog).
+- **Cross-provider gotcha (load-bearing):** the spawn MUST pass explicit
+  `settings.modeId` — cross-provider mode inheritance throws. This is the
+  single most common reviewer-spawn bug. Full shape + the fresh-vs-continuation
+  rule live in [`paseo-reviewer-dispatch.md`](paseo-reviewer-dispatch.md).
+
+The `codex exec` CLI (nightmare mode under `REVIEWER_DIFFICULTY=nightmare`)
+maps to a paseo codex agent in `full-access` mode — autonomous repo read, same
+semantics, now a real inspectable/archivable agent instead of a stateless
+one-shot. The `nightmare` mode's "GPT reads repo directly" property is
+preserved exactly; only the substrate changes.
+
+When the paseo MCP server is unavailable, `— reviewer: codex` (or unset) falls
+back to `mcp__codex__codex` / `codex-reply` — today's behavior, byte-for-byte.
+The verdict, trace, and acceptance gate are identical on either path; only
+the dispatch substrate changes.
 
 ## Optional: GPT-5.5 Pro via Oracle
 
@@ -214,13 +250,27 @@ If manual-review MCP is not installed, `— reviewer: manual` prints install ins
 
 ### `codex exec` CLI is NOT an equivalent Codex backend
 
-The mainline reviewer contract is `mcp__codex__codex` + `mcp__codex__codex-reply`: skills rely on **thread continuity** (e.g. `/idea-creator` Phase 4 runs its devil's-advocate triage as a same-thread `codex-reply`), structured returns, and saved `threadId` traces. `codex exec --ephemeral` is a stateless one-shot — fine for a single self-contained review, but NOT a drop-in replacement: hand-rewriting every MCP call to `codex exec` silently loses reply continuity and tends to mangle SKILL.md instructions (observed in the wild as "the executor skips phases and improvises" — issue #284).
+The mainline reviewer contract is now a **paseo codex sub-agent** (per
+[`paseo-reviewer-dispatch.md`](paseo-reviewer-dispatch.md)), with
+`mcp__codex__codex` + `mcp__codex__codex-reply` as the fallback when paseo MCP
+is unavailable. Both the paseo agent and the MCP fallback rely on **thread
+continuity** (e.g. `/idea-creator` Phase 4 runs its devil's-advocate triage as
+a same-thread continuation — `send_agent_prompt` to the same agent, or
+`codex-reply`), structured returns, and saved `threadId`/agent-id traces.
+`codex exec --ephemeral` is a stateless one-shot — fine for a single
+self-contained review, but NOT a drop-in replacement: hand-rewriting every
+call to `codex exec` silently loses reply continuity and tends to mangle
+SKILL.md instructions (observed in the wild as "the executor skips phases and
+improvises" — issue #284). The `nightmare` difficulty's "GPT reads repo
+directly" property is satisfied by a paseo codex agent in `full-access` mode,
+NOT by a bare `codex exec` one-shot.
 
 If Codex MCP is broken in your setup, prefer in order:
 
-1. Fix the MCP registration: `claude mcp add codex -s user -- codex mcp-server`, then `/mcp` in-session to (re)connect.
-2. Codex-CLI-as-executor: use the native mirror pack [`skills/skills-codex/`](../skills-codex/) — designed to run inside Codex CLI without Claude-side MCP.
-3. One-shot `codex exec` only for skills whose review is a single call with no follow-up reply.
+1. Use the paseo codex agent path (default) — `mcp__paseo__create_agent` with `provider:"codex/gpt-5.5"`, `modeId:"full-access"`, `thinkingOptionId:"xhigh"`.
+2. Fix the MCP registration: `claude mcp add codex -s user -- codex mcp-server`, then `/mcp` in-session to (re)connect.
+3. Codex-CLI-as-executor: use the native mirror pack [`skills/skills-codex/`](../skills-codex/) — designed to run inside Codex CLI without Claude-side MCP.
+4. One-shot `codex exec` only for skills whose review is a single call with no follow-up reply.
 
 ### Future work
 
