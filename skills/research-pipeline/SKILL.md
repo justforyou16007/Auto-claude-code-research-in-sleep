@@ -76,24 +76,42 @@ gate, and calls `run_state.py accept`.
 
 1. **Probe the paseo MCP.** Check whether `mcp__paseo__list_agents` (or any
    paseo tool) is available.
-   - **Available** → set `fanout_subagents=true` for this run (or whatever
-     `## ARIS Paseo` says). Use the paseo dispatch path below.
+   - **Available** → use the paseo dispatch path below.
    - **Unavailable** → log `WARN: paseo MCP unavailable; using in-process
-     Skill + mcp__codex__codex fallback`. Set `fanout_subagents=false`. Use
-     today's synchronous `Skill`-tool + `mcp__codex__codex` path. The verdict,
-     audit chain, and acceptance gate are **identical** on either path — only
-     the dispatch substrate changes (`paseo-subagent-dispatch.md` §"Auto-skip").
-2. **Read CLAUDE.md `## ARIS Paseo`** for `executor_provider`, `executor_mode`,
-   `executor_thinking`, `reviewer_provider`, `reviewer_mode`, `reviewer_thinking`,
-   `fanout_subagents`, `subagent_workspace`, `heartbeat_cron`,
-   `heartbeat_max_runs`. Defaults if the block is absent are in
-   [`templates/CLAUDE_MD_PASEO_SECTION.md`](../../templates/CLAUDE_MD_PASEO_SECTION.md).
-3. **Resolve the W-agent prompt renderer** (a non-helper skill script): 
-   `skills/research-pipeline/scripts/render_w_agent_prompt.sh` (Layer 0,
-   `$CLAUDE_SKILL_DIR/scripts/` if set, else the `skills/` tree). It reads the
-   `## ARIS Paseo` block and emits the `initialPrompt` per
-   `paseo-subagent-dispatch.md`'s contract. The orchestrator passes its stdout
-   to `mcp__paseo__create_agent`.
+     Skill + mcp__codex__codex fallback`. Use today's synchronous `Skill`-tool +
+     `mcp__codex__codex` path. The verdict, audit chain, and acceptance gate are
+     **identical** on either path — only the dispatch substrate changes
+     (`paseo-subagent-dispatch.md` §"Auto-skip"). Skip step 2 (no config.json
+     needed for the fallback path).
+2. **Resolve the W-agent prompt renderer + emit the run config ONCE**
+   (a non-helper skill script, resolved at
+   `skills/research-pipeline/scripts/render_w_agent_prompt.sh` — Layer 0,
+   `$CLAUDE_SKILL_DIR/scripts/` if set, else the `skills/` tree). Run:
+   ```bash
+   CONFIG=$(bash "$RENDER" --emit-config --run-id "$RUN_ID" --root "$ROOT")
+   ```
+   The script reads the CLAUDE.md `## ARIS Paseo` block (optional — defaults if
+   absent, per [`templates/CLAUDE_MD_PASEO_SECTION.md`](../../templates/CLAUDE_MD_PASEO_SECTION.md))
+   and writes **all 12 paseo variables** to `.aris/runs/<run_id>.paseo-config.json`,
+   returning its path on stdout. **Read this JSON once and hold it for the whole
+   run** — every `create_agent` / `create_heartbeat` call below takes its
+   `provider` / `settings.modeId` / `settings.thinkingOptionId` / `workspace` /
+   `notifyOnFinish` / `fanout_subagents` / `heartbeat_cron` from this JSON,
+   NOT from re-reading CLAUDE.md prose. This is script-guaranteed
+   (integration-contract §2: prose can describe the integration; the script
+   guarantees it) — it closes the gap where `reviewer_mode` could otherwise be
+   missed and trigger the cross-provider `modeId` throw
+   (`paseo-reviewer-dispatch.md` gotcha).
+3. **Per stage: render the W-agent initialPrompt** with the same script
+   (default mode, not `--emit-config`):
+   ```bash
+   PROMPT=$(bash "$RENDER" --phase <phase> --run-id "$RUN_ID" --root "$ROOT" \
+            --skill skills/<leaf>/SKILL.md --extra "<stage-specific context>")
+   ```
+   The prompt embeds `executor_provider` / `executor_mode` / `subagent_workspace`
+   / `fanout_subagents` from the config (the script re-reads CLAUDE.md, same
+   values) and points the child at the workflow SKILL.md as the workflow
+   definition. Pass `$PROMPT` as `initialPrompt` to `mcp__paseo__create_agent`.
 
 ## Resumable runs (`— resume <run_id>`)
 
@@ -204,18 +222,25 @@ quality verdict still terminates in the cross-model jury (`acceptance-gate.md`).
 ## The W-agent dispatch (per stage)
 
 For each stage, the orchestrator does the same four-step dispatch per
-`paseo-subagent-dispatch.md`:
+`paseo-subagent-dispatch.md`. All `create_agent` parameters come from the
+run's `.aris/runs/<run_id>.paseo-config.json` (emitted once in "Paseo
+substrate setup" step 2) — read it as `$CFG`:
 
-1. **Render the initialPrompt** with `render_w_agent_prompt.sh`:
+1. **Render the initialPrompt** with `render_w_agent_prompt.sh` (default mode):
    ```bash
    PROMPT=$(bash "$RENDER" --phase <phase> --run-id "$RUN_ID" --root "$ROOT" \
             --skill skills/<leaf>/SKILL.md --extra "<stage-specific context>")
    ```
 2. **`set <run_id> <phase> running`**, then **`mcp__paseo__create_agent`** for the
-   W-skill: `relationship:{kind:"subagent"}`, `workspace:{kind:"current"}`
-   (or `create`+worktree if `subagent_workspace=worktree`), `provider:
-   $executor_provider`, `settings:{modeId:$executor_mode, thinkingOptionId:
-   $executor_thinking}`, `initialPrompt: $PROMPT`, `notifyOnFinish:true`.
+   W-skill, reading every field from `$CFG`:
+   - `relationship: {kind: "subagent"}`
+   - `workspace: {kind: <CFG.subagent_workspace>}` (`current` shares the project
+     dir; `worktree` gives an isolated git worktree)
+   - `provider: <CFG.executor_provider>`
+   - `settings: {modeId: <CFG.executor_mode>, thinkingOptionId: <CFG.executor_thinking>}`
+     (omit `thinkingOptionId` when `CFG.executor_thinking` is null — model default)
+   - `initialPrompt: $PROMPT`
+   - `notifyOnFinish: <CFG.notify_on_finish>`
 3. **Do NOT `wait_for_agent`** (push model). Continue; when the child's
    `notifyOnFinish` lands, read its receipt file (`.aris/runs/<run_id>.<phase>.done.json`)
    — preemption-safe, NOT `<agent-response>` — and `set <run_id> <phase> done
@@ -223,6 +248,13 @@ For each stage, the orchestrator does the same four-step dispatch per
 4. **Run the gate** (per the acceptance-authority table). Only on a positive
    verdict call `run_state.py accept <run_id> <phase> --verdict-id <id>
    --reviewer <name>`. Then `archive_agent` the W-agent (用完即 archive — fresh-purpose).
+
+**Reviewer sub-agents** (spawned by the W-agents, not the orchestrator) read
+the SAME `$CFG` for `reviewer_provider` / `reviewer_mode` / `reviewer_thinking`
+— the executor prompt embeds these and points at `paseo-reviewer-dispatch.md`,
+so the W-agent fills `provider: <CFG.reviewer_provider>`, `settings:
+{modeId: <CFG.reviewer_mode>, thinkingOptionId: <CFG.reviewer_thinking>}`
+(omit `thinkingOptionId` when null).
 
 Each W-agent runs its own workflow SKILL.md (the workflow definition, unchanged)
 and spawns its own sub-agents + codex reviewer sub-agents per
