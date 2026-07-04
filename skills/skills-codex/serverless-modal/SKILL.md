@@ -85,6 +85,22 @@ Cost estimate (Modal):
 
 ## Workflow
 
+> **Launcher generation, run, monitor, collect, cleanup are delegated to the `experiment_env` helper's `modal` backend** (`tools/experiment_env/modal_env.py`). Resolve it once, then `deploy` generates `modal_launcher.py` (Pattern A) and runs it; `monitor`/`collect`/`destroy` cover the rest. The cost-estimate + GPU-choice UX (Step 1) stays in this skill. The agent reads `AGENTS.md` and translates codex aliases (`modal_app`→`modal_app_file`, `modal_secrets` str→list).
+
+```bash
+# --- resolve experiment_env helper (multi-owner, Layer 2 canonical) ---
+ENV_HELPER=""
+if [ -z "${ARIS_REPO:-}" ] && [ -f .aris/installed-skills.txt ]; then
+    ARIS_REPO=$(awk -F'\t' '$1=="repo_root"{print $2; exit}' .aris/installed-skills.txt 2>/dev/null) || true
+fi
+ENV_HELPER=".aris/tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || ENV_HELPER="tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || { [ -n "${ARIS_REPO:-}" ] && ENV_HELPER="$ARIS_REPO/tools/experiment_env/env_helper.py"; }
+[ -f "$ENV_HELPER" ] || ENV_HELPER=""
+[ -z "$ENV_HELPER" ] && { echo "ERROR: experiment_env helper not found (Layer 1-3)" >&2; exit 1; }
+ENV_CONFIG=".aris/experiment-env.json"
+```
+
 ### Step 1: Analyze Task → Estimate Cost → Choose GPU
 
 Same analysis as any GPU skill — determine VRAM needs from model size, pick GPU, estimate hours, calculate cost. See pricing table above.

@@ -171,7 +171,7 @@ Layer 3:  $ARIS_REPO/tools/<helper>                # global fallback
 
 Pick a failure policy from `integration-contract.md` §2 per-helper table: A (gate) / B (side-effect) / C (forensic) / D1 (cascade) / D2 (multi-source aggregate) / E (diagnostic). Each has POSIX-sh + `set -e` + `set -u` safe example blocks.
 
-Advisory CI lint at `.github/workflows/lint-skills-helpers.yml` flags hardcoded `python3 tools/foo.py` patterns in PR-modified SKILL.md (warning only, never fails CI). Single-owner helpers (used by exactly one SKILL) live at `skills/<owner>/scripts/<helper>` per Arch C; precedents: `figure-spec`, `paper-illustration-image2`, `experiment-queue`, `render-html`.
+Advisory CI lint at `.github/workflows/lint-skills-helpers.yml` flags hardcoded `python3 tools/foo.py` patterns in PR-modified SKILL.md (warning only, never fails CI). Single-owner helpers (used by exactly one SKILL) live at `skills/<owner>/scripts/<helper>` per Arch C; precedents: `figure-spec`, `paper-illustration-image2`, `experiment-queue`, `render-html`. **Multi-owner helpers** (used by several SKILLs) live at `tools/<helper>` directly — Layer 2 is the canonical location, so Layers 1-3 all resolve to the real code and **no `os.execv` shim is needed**; precedent: `experiment_env/env_helper.py` (drives local/remote/vast/modal environments for `/run-experiment`, `/monitor-experiment`, `/vast-gpu`, `/serverless-modal`, `/experiment-queue` — see `tools/experiment_env/README.md`).
 
 ## Cross-Model Protocol
 

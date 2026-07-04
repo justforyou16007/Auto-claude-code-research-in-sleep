@@ -6,6 +6,8 @@ When GPT-5.5 says "run an ablation study" or "add a baseline comparison", Claude
 
 Three GPU modes are supported — pick one and add it to your project's `CLAUDE.md`:
 
+> **Canonical field names.** The examples below use readable display names (`Conda env:`, `Code directory:`, `SSH:`). The `experiment_env` helper (`tools/experiment_env/env_helper.py`) validates these via a translation guide — the agent maps `Conda env:`→`conda_env`, `Code directory:`→`code_dir`, `SSH:`→`ssh_alias`, etc., then `env_helper.py parse` writes `.aris/experiment-env.json`. See `tools/experiment_env/README.md` for the full canonical field reference and `templates/CLAUDE_MD_TEMPLATE.md` `## Experiment Environment` for canonical-name examples.
+
 #### Option A: Remote SSH Server (`gpu: remote`)
 
 ```markdown

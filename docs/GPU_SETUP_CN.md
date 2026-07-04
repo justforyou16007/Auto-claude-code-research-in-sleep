@@ -6,6 +6,8 @@
 
 在项目的 `CLAUDE.md` 中添加服务器信息：
 
+> **规范字段名。** 下方示例用可读的显示名（`Conda 环境`、`代码目录`、`SSH`）。`experiment_env` helper(`tools/experiment_env/env_helper.py`)通过翻译指南校验这些——agent 把 `Conda 环境`→`conda_env`、`代码目录`→`code_dir`、`SSH`→`ssh_alias` 等,再由 `env_helper.py parse` 写入 `.aris/experiment-env.json`。完整规范字段见 `tools/experiment_env/README.md`,规范名示例见 `templates/CLAUDE_MD_TEMPLATE.md` 的 `## Experiment Environment`。
+
 ```markdown
 ## 远程服务器
 

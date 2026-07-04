@@ -9,73 +9,53 @@ Deploy and run ML experiment: $ARGUMENTS
 
 ## Workflow
 
-### Step 1: Detect Environment
+> **Environment control is delegated to the `experiment_env` helper** (`tools/experiment_env/env_helper.py`). Resolve it once via the Layer 0-3 chain, then every step calls a subcommand. The agent reads the project's `AGENTS.md` (codex mode — falls back to `CLAUDE.md` if no `AGENTS.md`) and translates the env section into a candidate JSON; `env_helper.py parse` validates + writes `.aris/experiment-env.json`. See `tools/experiment_env/README.md` for the translation guide (the codex aliases `vast_instance`→`instance_id`, `modal_app`→`modal_app_file` are translated by the agent; the validator warns if a raw alias slips through).
 
-Read the project's `AGENTS.md` to determine the experiment environment:
+```bash
+# --- resolve experiment_env helper (multi-owner, Layer 2 canonical) ---
+ENV_HELPER=""
+if [ -z "${ARIS_REPO:-}" ] && [ -f .aris/installed-skills.txt ]; then
+    ARIS_REPO=$(awk -F'\t' '$1=="repo_root"{print $2; exit}' .aris/installed-skills.txt 2>/dev/null) || true
+fi
+ENV_HELPER=".aris/tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || ENV_HELPER="tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || { [ -n "${ARIS_REPO:-}" ] && ENV_HELPER="$ARIS_REPO/tools/experiment_env/env_helper.py"; }
+[ -f "$ENV_HELPER" ] || ENV_HELPER=""
+[ -z "$ENV_HELPER" ] && { echo "ERROR: experiment_env helper not found (Layer 1-3)" >&2; exit 1; }
+ENV_CONFIG=".aris/experiment-env.json"
+```
 
-- **Local GPU**: Look for local CUDA/MPS setup info
-- **Remote server**: Look for SSH alias, conda env, code directory
-- **Vast.ai instance**: Look for `gpu: vast`, `vast_instance`, SSH host/port, remote path, and optional `auto_destroy`
-- **Modal serverless**: Look for `gpu: modal`, app/function name, image/dependency setup, and secrets
+### Step 1: Parse Environment Config
 
-If no server info is found in `AGENTS.md`, ask the user.
+Read `AGENTS.md` (or `CLAUDE.md`), find the env section, translate field names to canonical (`vast_instance`→`instance_id`, `modal_app`→`modal_app_file`, `Conda:`→`conda_hook`/`conda_env`, `Code dir:`→`code_dir`, `SSH:`→`ssh_alias`, etc.), pick `env_type`, and validate+write:
+
+```bash
+echo '<candidate-json>' | python3 "$ENV_HELPER" parse --json - --source AGENTS.md
+```
+
+Env types: `gpu: local`, `gpu: remote`, `gpu: vast` (`vast_instance` present → reuse, else fresh rental in Step 4), `gpu: modal`. If no env info found in AGENTS.md, ask the user.
 
 ### Step 2: Pre-flight Check
 
-Check GPU availability on the target machine:
-
-**Remote:**
 ```bash
-ssh <server> nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader
+python3 "$ENV_HELPER" preflight --env-config "$ENV_CONFIG" --dry-run
+python3 "$ENV_HELPER" preflight --env-config "$ENV_CONFIG"
 ```
 
-**Local:**
+Returns `{ok, checks[], gpu_free_mib}`. Free GPU = `memory.used < 500 MiB`. Pick a free GPU index for Step 4. Modal skips GPU preflight.
+
+### Step 3: Sync Code
+
 ```bash
-nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader
-# or for Mac MPS:
-python -c "import torch; print('MPS available:', torch.backends.mps.is_available())"
+python3 "$ENV_HELPER" sync --env-config "$ENV_CONFIG" --src ./src --dry-run
+python3 "$ENV_HELPER" sync --env-config "$ENV_CONFIG" --src ./src
 ```
 
-Free GPU = memory.used < 500 MiB.
-
-### Step 3: Sync Code (Remote Only)
-
-Check the project's `AGENTS.md` for a `code_sync` setting. If not specified, default to `rsync`.
-
-#### Option A: rsync (default)
-
-Only sync necessary files — NOT data, checkpoints, or large files:
-```bash
-rsync -avz --include='*.py' --exclude='*' <local_src>/ <server>:<remote_dst>/
-```
-
-#### Option B: git (when `code_sync: git` is set in AGENTS.md)
-
-Push local changes to remote repo, then pull on the server:
-```bash
-# 1. Push from local
-git add -A && git commit -m "sync: experiment deployment" && git push
-
-# 2. Pull on server
-ssh <server> "cd <remote_dst> && git pull"
-```
-
-Benefits: version-tracked, multi-server sync with one push, no rsync include/exclude rules needed.
-
-#### Option C: Vast.ai instance
-
-If `gpu: vast` is configured, treat the Vast.ai machine as a remote server with an explicit lifecycle:
-
-1. Verify the instance is running and reachable.
-2. Sync code to the configured remote path.
-3. Confirm data/checkpoints are already mounted or intentionally copied.
-4. Record the instance id in the launch summary for later cleanup.
-
-Do not silently ignore a requested Vast.ai route. If Vast.ai CLI credentials or instance metadata are missing, stop and ask the user to configure them.
+Honors `code_sync` (`rsync` default, or `git`). Vast always rsyncs to the configured remote path. Modal mounts local code at run time. Do not silently ignore a requested Vast.ai route — if credentials/instance metadata are missing, `provision`/`sync` will error and the agent surfaces it.
 
 ### Step 3.5: W&B Integration (when `wandb: true` in AGENTS.md)
 
-**Skip this step entirely if `wandb` is not set or is `false` in AGENTS.md.**
+**Skip this step entirely if `wandb` is not set or is `false` in AGENTS.md.** (Read `wandb`/`wandb_project`/`wandb_entity` from `$ENV_CONFIG`.)
 
 Before deploying, ensure the experiment scripts have W&B logging:
 
@@ -115,55 +95,31 @@ Before deploying, ensure the experiment scripts have W&B logging:
 
 ### Step 4: Deploy
 
-#### Remote (via SSH + screen)
-
-For each experiment, create a dedicated screen session with GPU binding:
-```bash
-ssh <server> "screen -dmS <exp_name> bash -c '\
-  eval \"\$(<conda_path>/conda shell.bash hook)\" && \
-  conda activate <env> && \
-  CUDA_VISIBLE_DEVICES=<gpu_id> python <script> <args> 2>&1 | tee <log_file>'"
-```
-
-#### Vast.ai instance
-
-Use the same SSH + screen pattern, but include the Vast.ai instance id, public SSH endpoint, and remote working directory in the report. If `auto_destroy: true`, write a cleanup command to the run notes before launch.
-
-Record the estimated hourly cost, expected run duration, and cleanup owner. If the command fails to start or the instance becomes unreachable, do not relaunch blindly; capture logs and ask for a rescue / second opinion before spending more GPU time.
-
-#### Modal (serverless)
-
-If `gpu: modal` is configured, deploy through Modal instead of SSH:
+Provision the environment first (vast: rent/reuse; remote/modal/local: verify), then launch the job. Build a `run_spec` JSON (`{script, args, gpu_id, exp_name, log_file, env_vars?}`) and deploy:
 
 ```bash
-modal run <module_or_app>.py -- <args>
+python3 "$ENV_HELPER" provision --env-config "$ENV_CONFIG" --dry-run
+python3 "$ENV_HELPER" provision --env-config "$ENV_CONFIG"
+echo '<run_spec-json>' > /tmp/run_spec.json
+python3 "$ENV_HELPER" deploy --env-config "$ENV_CONFIG" --run-spec /tmp/run_spec.json --dry-run
+python3 "$ENV_HELPER" deploy --env-config "$ENV_CONFIG" --run-spec /tmp/run_spec.json > /tmp/handle.json
 ```
 
-Before launch, verify required secrets, volumes, image dependencies, and output persistence. If Modal is requested but the project lacks Modal configuration, stop and ask the user to configure it rather than falling back to local execution.
-
-Record the Modal app/function name, GPU type, timeout, mounted volumes, and where results will be stored. If Modal reports an image, secret, or volume error, preserve the exact error and run a configuration fix before retrying.
-
-#### Local
-
-```bash
-# Linux with CUDA
-CUDA_VISIBLE_DEVICES=<gpu_id> python <script> <args> 2>&1 | tee <log_file>
-
-# Mac with MPS (PyTorch uses MPS automatically)
-python <script> <args> 2>&1 | tee <log_file>
-```
+`deploy` returns a `handle` (screen session / modal app / local pid) — save it for Step 5/7. Per env_type the backend uses the right primitive:
+- **remote**: `ssh <alias> "screen -dmS <exp> bash -c '<conda_hook> && conda activate <env> && CUDA_VISIBLE_DEVICES=<gpu> python <script> <args> 2>&1 | tee <log>"'`
+- **vast**: SSH+screen into the instance (`cd <code_dir>`, no conda); include instance id, SSH endpoint, cost in the report. If `auto_destroy: true`, cleanup is wired in Step 7. If the instance is unreachable or the command fails, capture logs and ask before spending more GPU time — do not relaunch blindly.
+- **modal**: generates `modal_launcher.py` (Pattern A) and `modal run`. Verify secrets/volumes/image before launch; if Modal reports a config error, fix it before retrying.
+- **local**: `CUDA_VISIBLE_DEVICES=<gpu> python <script> <args> 2>&1 | tee <log>` (Mac MPS omits CUDA_VISIBLE_DEVICES)
 
 For local long-running jobs, use `run_in_background: true` to keep the conversation responsive.
 
 ### Step 5: Verify Launch
 
-**Remote:**
 ```bash
-ssh <server> "screen -ls"
+python3 "$ENV_HELPER" monitor --env-config "$ENV_CONFIG" --handle /tmp/handle.json
 ```
 
-**Local:**
-Check process is running and GPU is allocated.
+Returns `{status: running|done|failed, tail, exit_code?}`. Confirm the job is running and GPU is allocated.
 
 ### Step 6: Feishu Notification (if configured)
 
@@ -173,14 +129,14 @@ After deployment is verified, check `~/.codex/feishu.json`:
 
 ### Step 7: Auto-Destroy Vast.ai Instance (when `gpu: vast` and `auto_destroy: true`)
 
-Only run this after the experiment has completed and results/logs/checkpoints have been copied or otherwise persisted.
+Only run this after the experiment has completed (Step 5 shows `done`) and results/logs/checkpoints have been persisted. The `auto_destroy` default rule: fresh rental (no `instance_id`) → true; reuse → false (check `$ENV_CONFIG`).
 
-1. Verify the target process has exited.
-2. Copy result files and logs to the configured durable location.
-3. Ask for confirmation unless AGENTS.md explicitly says `auto_destroy: true`.
-4. Destroy only the recorded instance id for this run.
+```bash
+python3 "$ENV_HELPER" collect --env-config "$ENV_CONFIG"   # copy results + logs to durable location
+python3 "$ENV_HELPER" destroy --env-config "$ENV_CONFIG"    # destroys only the recorded instance id for this run
+```
 
-If any artifact copy fails, do not destroy the instance.
+If any artifact copy fails, `collect` errors and `destroy` does not proceed — do not destroy the instance.
 
 ## Key Rules
 

@@ -9,9 +9,30 @@ Monitor: $ARGUMENTS
 
 ## Workflow
 
+> **Environment queries are delegated to the `experiment_env` helper** (`tools/experiment_env/env_helper.py`). Resolve it once, then `monitor`/`collect` handle all four env types uniformly (the backend type — local/SSH/Vast/Modal — is recorded in `$ENV_CONFIG` and the saved `handle`, so you do not assume a plain SSH screen). The agent reads `AGENTS.md` (codex mode).
+
+```bash
+# --- resolve experiment_env helper (multi-owner, Layer 2 canonical) ---
+ENV_HELPER=""
+if [ -z "${ARIS_REPO:-}" ] && [ -f .aris/installed-skills.txt ]; then
+    ARIS_REPO=$(awk -F'\t' '$1=="repo_root"{print $2; exit}' .aris/installed-skills.txt 2>/dev/null) || true
+fi
+ENV_HELPER=".aris/tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || ENV_HELPER="tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || { [ -n "${ARIS_REPO:-}" ] && ENV_HELPER="$ARIS_REPO/tools/experiment_env/env_helper.py"; }
+[ -f "$ENV_HELPER" ] || ENV_HELPER=""
+[ -z "$ENV_HELPER" ] && { echo "ERROR: experiment_env helper not found (Layer 1-3)" >&2; exit 1; }
+ENV_CONFIG=".aris/experiment-env.json"
+HANDLE="${HANDLE:-/tmp/handle.json}"   # saved by /run-experiment Step 4 (deploy)
+```
+
 ### Step 1: Check What's Running
 
-First identify the backend from `AGENTS.md`, run notes, or launch summary: local, SSH, Vast.ai, or Modal. Monitor the backend that was actually used; do not assume a plain SSH screen session when the run was launched through Vast.ai or Modal.
+First identify the backend from `AGENTS.md`, run notes, or launch summary: local, SSH, Vast.ai, or Modal. Monitor the backend that was actually used; do not assume a plain SSH screen session when the run was launched through Vast.ai or Modal. The `handle` + `$ENV_CONFIG` carry this, so a single call covers all backends:
+
+```bash
+python3 "$ENV_HELPER" monitor --env-config "$ENV_CONFIG" --handle "$HANDLE"
+```
 
 ```bash
 ssh <server> "screen -ls"

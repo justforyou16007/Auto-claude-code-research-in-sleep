@@ -52,6 +52,22 @@ This file is the source of truth for `/run-experiment` and `/monitor-experiment`
 
 ## Workflow
 
+> **Instance lifecycle (rent/setup/destroy) is delegated to the `experiment_env` helper's `vast` backend** (`tools/experiment_env/vast_env.py`). Resolve it once, then `provision`/`preflight`/`sync`/`destroy` drive the instance. The offer-search + cost-presentation UX stays in this skill (the backend's fresh-rental `provision` expects the chosen `offer_id` in the config). The agent reads `AGENTS.md` and translates the codex alias `vast_instance`→`instance_id`.
+
+```bash
+# --- resolve experiment_env helper (multi-owner, Layer 2 canonical) ---
+ENV_HELPER=""
+if [ -z "${ARIS_REPO:-}" ] && [ -f .aris/installed-skills.txt ]; then
+    ARIS_REPO=$(awk -F'\t' '$1=="repo_root"{print $2; exit}' .aris/installed-skills.txt 2>/dev/null) || true
+fi
+ENV_HELPER=".aris/tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || ENV_HELPER="tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || { [ -n "${ARIS_REPO:-}" ] && ENV_HELPER="$ARIS_REPO/tools/experiment_env/env_helper.py"; }
+[ -f "$ENV_HELPER" ] || ENV_HELPER=""
+[ -z "$ENV_HELPER" ] && { echo "ERROR: experiment_env helper not found (Layer 1-3)" >&2; exit 1; }
+ENV_CONFIG=".aris/experiment-env.json"
+```
+
 ### Action: Provision (default)
 
 Analyze the task, find the best GPU, and present cost-optimized options. This is the main entry point — called directly or automatically by `/run-experiment` when `gpu: vast` is set.

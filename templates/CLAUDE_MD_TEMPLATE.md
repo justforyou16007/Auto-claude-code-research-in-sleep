@@ -28,6 +28,49 @@ last_updated: ""     # YYYY-MM-DD HH:mm — auto-updated by skills on every outp
 
 - {budget details, e.g., "8x A100 for 24h via vast.ai"}
 
+## Experiment Environment
+
+> Required for any GPU experiment. Uncomment **one** block and fill it in.
+> The `experiment_env` helper (`tools/experiment_env/env_helper.py`) parses this
+> into `.aris/experiment-env.json`; see `tools/experiment_env/README.md` for the
+> full field reference. Field names here are the canonical ones the validator
+> expects — the agent translates any drift (e.g. `Conda env:` → `conda_env`).
+
+<!-- Remote (pre-configured SSH server)
+- gpu: remote
+- ssh_alias: my-gpu-server
+- conda_hook: eval "$(/opt/conda/bin/conda shell.bash hook)"
+- conda_env: research
+- code_dir: /home/user/experiments/
+- code_sync: rsync          # or "git"
+- wandb: false
+- wandb_project: my-project # required if wandb: true
+- wandb_entity: my-team     # optional
+-->
+
+<!-- Vast.ai (on-demand rental)
+- gpu: vast
+- instance_id:              # set to reuse an existing instance; omit for fresh rental
+- auto_destroy: true        # default: true for fresh rental, false for reuse
+- max_budget: 5.00
+- image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-devel
+-->
+
+<!-- Modal (serverless)
+- gpu: modal
+- modal_gpu: A100-80GB      # default: auto
+- modal_timeout: 21600      # default: 6 hours
+- modal_volume: my-results
+- modal_app_file: train.py  # optional
+- modal_secrets: [wandb-secret]  # optional list
+-->
+
+<!-- Local
+- gpu: local
+- conda_env: ml
+- device: cuda             # or "mps"; auto-detected if omitted
+-->
+
 ## ARIS Paseo
 
 > Optional. Controls the paseo parent-child agent execution substrate. If

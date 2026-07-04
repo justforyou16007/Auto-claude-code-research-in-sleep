@@ -20,51 +20,55 @@ Monitor: $ARGUMENTS
 
 ## Workflow
 
+> **Environment queries are delegated to the `experiment_env` helper** (`tools/experiment_env/env_helper.py`). Resolve it once, then `monitor`/`collect` handle all four env types (remote screen, vast instance, modal app, local pid) uniformly. The `handle` saved by `/run-experiment` Step 4 drives these calls.
+
+```bash
+# --- resolve experiment_env helper (multi-owner, Layer 2 canonical) ---
+ENV_HELPER=""
+if [ -z "${ARIS_REPO:-}" ] && [ -f .aris/installed-skills.txt ]; then
+    ARIS_REPO=$(awk -F'\t' '$1=="repo_root"{print $2; exit}' .aris/installed-skills.txt 2>/dev/null) || true
+fi
+ENV_HELPER=".aris/tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || ENV_HELPER="tools/experiment_env/env_helper.py"
+[ -f "$ENV_HELPER" ] || { [ -n "${ARIS_REPO:-}" ] && ENV_HELPER="$ARIS_REPO/tools/experiment_env/env_helper.py"; }
+[ -f "$ENV_HELPER" ] || ENV_HELPER=""
+[ -z "$ENV_HELPER" ] && { echo "ERROR: experiment_env helper not found (Layer 1-3)" >&2; exit 1; }
+ENV_CONFIG=".aris/experiment-env.json"
+# handle.json was saved by /run-experiment Step 4 (deploy). If absent, the
+# agent reconstructs it from the env config + experiment name.
+HANDLE="${HANDLE:-/tmp/handle.json}"
+```
+
 ### Step 1: Check What's Running
 
-**SSH server:**
 ```bash
-ssh <server> "screen -ls"
+python3 "$ENV_HELPER" monitor --env-config "$ENV_CONFIG" --handle "$HANDLE"
 ```
 
-**Vast.ai instance** (read `ssh_host`, `ssh_port` from `vast-instances.json`):
-```bash
-ssh -p <PORT> root@<HOST> "screen -ls"
-```
+Returns `{status: running|done|failed|unknown, gpu_usage?, tail, exit_code?}`. The backend queries the right surface per env_type:
+- **remote/vast**: `ssh ... "screen -ls"` (+ `vastai show instances` for vast, reading `vast-instances.json`)
+- **modal**: `modal app list` + `modal app logs <app>` (apps auto-terminate when done — absent from list = finished)
+- **local**: `kill -0 <pid>` + log tail
 
-Also check vast.ai instance status:
-```bash
-vastai show instances
-```
+### Step 2: Collect Output
 
-**Modal** (when `gpu: modal` in CLAUDE.md):
-```bash
-modal app list         # List running/recent apps
-modal app logs <app>   # Stream logs from a running app
-```
-Modal apps auto-terminate when done — if it's not in the list, it already finished. Check results via `modal volume ls <volume>` or local output.
-
-### Step 2: Collect Output from Each Screen
-For each screen session, capture the last N lines:
-```bash
-ssh <server> "screen -S <name> -X hardcopy /tmp/screen_<name>.txt && tail -50 /tmp/screen_<name>.txt"
-```
-
-If hardcopy fails, check for log files or tee output.
+For each running job, the `monitor` `tail` field already carries the last screen/log lines (backend does `screen -X hardcopy` / log tail internally). If you need a larger window, re-run with the backend's log path.
 
 ### Step 3: Check for JSON Result Files
+
 ```bash
-ssh <server> "ls -lt <results_dir>/*.json 2>/dev/null | head -20"
+python3 "$ENV_HELPER" collect --env-config "$ENV_CONFIG"   # downloads results + logs to ./results/ ./logs/
 ```
 
-If JSON results exist, fetch and parse them:
+Then read the collected JSON locally:
 ```bash
-ssh <server> "cat <results_dir>/<latest>.json"
+ls -lt ./results/*.json 2>/dev/null | head -20
+cat ./results/<latest>.json
 ```
 
 ### Step 3.5: Pull W&B Metrics (when `wandb: true` in CLAUDE.md)
 
-**Skip this step entirely if `wandb` is not set or is `false` in CLAUDE.md.**
+**Skip this step entirely if `wandb` is not set or is `false` in CLAUDE.md.** (Read `wandb`/`wandb_project`/`wandb_entity` from `$ENV_CONFIG`.)
 
 Pull training curves and metrics from Weights & Biases via Python API:
 
